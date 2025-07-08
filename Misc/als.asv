@@ -1,0 +1,41 @@
+function z = als(y, lambda, p, itermax)
+% als: Asymmetric Least Squares baseline correction
+%
+% Inputs:
+%   y        - Input data (1D array: spectrum or chromatogram)
+%   lambda   - Smoothness parameter (higher = smoother baseline)
+%   p        - Asymmetry parameter (0.5 = symmetric, <0.5 favors suppression of peaks)
+%   itermax  - Number of iterations
+%
+% Output:
+%   z        - Estimated baseline
+    arguments
+        y 
+        lambda {mustBeNumeric} = 1e6;
+        p 
+        itermax 
+    end
+
+
+    if nargin < 2, lambda = 1e6; end
+    if nargin < 3, p = 0.1; end
+    if nargin < 4, itermax = 10; end
+
+    y = y(:);  % Ensure column vector
+    L = length(y);
+    
+    % Construct second-order difference matrix D
+    e = ones(L,1);
+    D = spdiags([e -2*e e], 0:2, L-2, L);  % Mimics 2nd order difference
+    DTD = D' * D;
+    
+    % Initialize weights
+    w = ones(L,1);
+    
+    for i = 1:itermax
+        W = spdiags(w, 0, L, L);  % Diagonal weight matrix
+        Z = W + lambda * DTD;
+        z = Z \ (w .* y);  % Solve linear system
+        w = p * (y > z) + (1 - p) * (y < z);  % Update weights
+    end
+end

@@ -1,0 +1,75 @@
+function cbAx = plotRGBColorbar(ax,data,cmap,isMainAx,opts)
+
+    arguments
+        ax matlab.graphics.axis.Axes;
+        data {mustBeNumeric};
+        cmap (:,3) double = jet(256)
+        isMainAx = true;
+        opts.nTicks = 5;
+        opts.tickLoc = 'left';
+        opts.tickMargin = 0.2;
+        opts.margin_h = 0.03;
+    end
+
+    if isMainAx
+        % Position and sizing parameters
+
+        pos = ax.Position;
+        cbWidth = 0.02; % width of colorbar
+        if strcmp(opts.tickLoc,'left')
+            cbMargin_w = 0.02; % space between main axis and colorbar
+        else
+            cbMargin_w = 0.01;
+        end
+        cbMargin_h = opts.margin_h;
+        width = cbWidth+cbMargin_w+opts.tickMargin;
+        ax.Position(3) = ax.Position(3)-width;
+        cbPos = [pos(1) + pos(3)-width+cbMargin_w, pos(2)+cbMargin_h,...
+                                      cbWidth, pos(4)-2*cbMargin_h];
+        
+        % Create new axis for colorbar
+        cbAx = axes('Position', cbPos,'Parent',ax.Parent);
+    else
+        cbAx = ax;
+    end
+    
+    % Compute data range
+    dataMin = min(data(:));
+    dataMax = max(data(:));
+    if dataMin == dataMax
+        dataMax = dataMin + 1; % avoid zero range
+    end
+
+    % Create vertical gradient image
+    nColors = size(cmap,1);
+    gradientImg = repmat(linspace(0,1,nColors)', 1, 20);
+
+    % Display gradient image
+    imagesc(cbAx, gradientImg);
+    set(cbAx, 'YDir', 'normal');
+
+    % Apply colormap only to this axis
+    colormap(cbAx, cmap);
+
+    % Set axis limits and ticks
+    cbAx.XLim = [1 20];
+    cbAx.YLim = [1 nColors];
+    cbAx.XTick = [];
+    
+    tickIdx = round(linspace(1, nColors, opts.nTicks));
+    if ~isempty(opts.tickMin)
+        dataMin = opts.tickMin;
+    end
+    if ~isempty(opts.tickMax)
+        dataMax = opts.tickMax;
+    end
+    tickLabels = linspace(dataMin, dataMax, opts.nTicks);
+    cbAx.YTick = tickIdx;
+    cbAx.YTickLabel = compose('%.2g', tickLabels);
+    %ylabel(cbAx, 'Overlay Intensity');
+
+    axis(cbAx, 'tight');
+    cbAx.Box = 'off';
+    cbAx.TickLength = [0 0];
+    cbAx.YAxisLocation = opts.tickLoc;
+end

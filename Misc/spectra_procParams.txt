@@ -1,0 +1,2 @@
+phi0	phi1	pivotMode	pivotVal	baseline	Date
+-14	2.111	ppm	171.041	LinearInterp	07/03/2025
