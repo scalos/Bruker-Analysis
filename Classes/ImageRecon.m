@@ -4,8 +4,8 @@ classdef ImageRecon<handle
         base = struct;
         layers;
         dispAx;
-        cbAx;
         rotAng = 0;
+        baseInd = 1;
         prefs = struct('rotationInterpMethod','bilinear', ...
                        'colorBar',struct('visible',false,...
                                          'targInd',1,...
@@ -59,10 +59,6 @@ classdef ImageRecon<handle
                 obj 
                 type {mustBeMember(type,{'freehand','ellipse'})}
             end
-
-            
-                
-
             obj.show;
             working = true;
             disp('Draw ROI: ');
@@ -87,7 +83,8 @@ classdef ImageRecon<handle
             roiSigns = 1;
             maskLayers = newMask;
             saved = false;
-            layerInd = obj.addLayer(zeros(maskSize),visible=false,solidRGB=[1,0,0]);
+            cmap = repmat([1,0,0],[256,1]);
+            layerInd = obj.addLayer('func',zeros(maskSize),visible=false,cmap=cmap);
             function totalMask = getTotalMask(layers)
                 totalMask = layers(:,:,1);
                 for ii = 1:size(layers,3)-1
@@ -446,6 +443,7 @@ classdef ImageRecon<handle
                 opts.name = [];
                 opts.visible logical = true;
                 opts.tPose logical = false;
+                opts.shift (1,2) = [0,0];
                 opts.viewRep {mustBeInteger,mustBeGreaterThan(opts.viewRep,0)} = 1;
                 opts.trans {mustBeNumeric,...
                             mustBeGreaterThanOrEqual(opts.trans,0),...
@@ -455,8 +453,7 @@ classdef ImageRecon<handle
                             mustBeLessThanOrEqual(opts.thresh,1)} = [];
                 opts.mask (:,:) logical = [];
                 opts.cmap (:,3) = [];
-                opts.solidRGB {mustBeNumeric} = [];
-                
+                opts.clim = [0,1];
             end
 
             %Layer is 3d matrix (x,y,nReps)
@@ -468,7 +465,7 @@ classdef ImageRecon<handle
                     opts.trans = 0.3;
                 end
                 if isempty(opts.thresh)
-                    opts.thresh = 0.3;
+                    opts.thresh = [0.3,1];
                 end
                 if isempty(opts.cmap)
                     opts.cmap = jet(256);
@@ -479,7 +476,7 @@ classdef ImageRecon<handle
                     opts.trans = 1;
                 end
                 if isempty(opts.thresh)
-                    opts.thresh = 0;
+                    opts.thresh = [0,1];
                 end
                 if isempty(opts.cmap)
                     opts.cmap = gray(256);
@@ -490,14 +487,15 @@ classdef ImageRecon<handle
                               'data',layerData,...
                               'visible',opts.visible,...
                               'tPose',opts.tPose,...
+                              'shift',opts.shift,...
                               'viewRep',opts.viewRep,...
                               'nReps',nReps,...
                               'trans',opts.trans,...
                               'thresh',opts.thresh,...
                               'mask',opts.mask,...
                               'cmap',opts.cmap,...
-                              'solidRGB',opts.solidRGB,...
-                              'normVal',[]);
+                              'clim',opts.clim,...
+                              'mode','abs');
             obj.layers{end+1} = newLayer;
             layerInd = numel(obj.layers);
             obj.show;
@@ -662,7 +660,61 @@ classdef ImageRecon<handle
 
         end
 
-        function show(obj,mode)
+        function show(obj)
+            if isempty(obj.dispAx)||~isvalid(obj.dispAx)
+                ax = axes(figure,Visible='off',Position=[0,0,1,1]);
+                obj.dispAx = ax;
+                disp('Making new figure');
+            else
+                ax = obj.dispAx;
+            end
+            
+            baseLayer = obj.layers{obj.baseInd};
+            if baseLayer.tPose
+                baseSize = size(squeeze(baseLayer.data(:,:,1)));
+            else
+                baseSize = size(squeeze(baseLayer.data(:,:,1))');
+            end
+
+            for lInd = 1:numel(obj.layers)
+                if obj.layers{lInd}.visible
+                    layer = obj.layers{lInd};
+                    layerData = squeeze(eval(sprintf('%s(layer.data(:,:,1))',layer.mode)));
+                    if ~layer.tPose
+                        layerData = layerData';
+                    end
+                    layerData = imresize(layerData,baseSize);
+                    layerData = obj.globalTforms(layerData);
+                    layerData = circshift(layerData,layer.shift);
+                    if ~isempty(layer.mask)
+                        layerData = mask(layerData,layer.mask);
+                    end
+                    
+                    %format data for cmap
+                    layerData = layerData-min(min(layerData));
+                    layerData = layerData/max(max(layerData));
+                    layerData(layerData<layer.clim(1)) = layer.clim(1);
+                    layerData(layerData>layer.clim(2)) = layer.clim(2);
+                    layerData = mat2gray(layerData)*height(layer.cmap);
+                    layerTC = ind2rgb(uint8(layerData),layer.cmap);
+
+                    hold(ax,'on');
+                    img = imagesc(ax,layerTC);
+                    imAlpha = repmat(layer.trans,size(layerData));
+                    imAlpha(layerData<(layer.thresh(1)*height(layer.cmap))) = 0;
+                    imAlpha(layerData>(layer.thresh(2)*height(layer.cmap))) = 0;
+                    set(img,'AlphaData',imAlpha);
+                    set(img,'AlphaDataMapping','none');
+                    hold(ax,'off');
+                end
+                axis(ax,'on');
+                axis(ax,"image");
+                set(ax,'XTick',[],'YTick',[])
+                axis(ax,'tight');
+            end
+        end
+
+        function show_old(obj,mode)
             arguments
                 obj
                 mode = 'abs';
