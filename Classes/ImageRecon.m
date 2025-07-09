@@ -44,11 +44,14 @@ classdef ImageRecon<handle
     methods
         function obj = ImageRecon(baseData)
             arguments
-                baseData (:,:,:) {mustBeNumeric};
+                baseData (:,:,:) {mustBeNumeric} = [];
             end
-            %Base is 3d matrix (in most cases this will be T1 Flash or T2 Rare)
-            %Dimensions: x,y,nReps
-            obj.setBase(baseData);
+            %Base data is assumed to be structural MRI. If this behavior is
+            %not desired, do not pass base data when instantiating and
+            %instead add layers after.
+            if ~isempty(baseData)
+                obj.addLayer("struc",baseData);
+            end
         end
 
         function drawMask(obj,type)
@@ -342,7 +345,6 @@ classdef ImageRecon<handle
             if ~iscell(roiMasks)
                 roiMasks = {roiMasks};
             end
-            obj.purgeLayers;
             if targetInd>numel(obj.layers)
                 error('Target Index (%d) is out of range for %d layers',targetInd,numel(obj.layers));
             end
@@ -436,56 +438,69 @@ classdef ImageRecon<handle
             end
         end
 
-        function layerInd = addLayer(obj,layerData,opts)
+        function layerInd = addLayer(obj,type,layerData,opts)
             arguments
                 obj 
+                type {mustBeMember(type,{'struc','func'})};
                 layerData (:,:,:) {mustBeNumeric};
+                opts.name = [];
                 opts.visible logical = true;
+                opts.tPose logical = false;
                 opts.viewRep {mustBeInteger,mustBeGreaterThan(opts.viewRep,0)} = 1;
                 opts.trans {mustBeNumeric,...
                             mustBeGreaterThanOrEqual(opts.trans,0),...
-                            mustBeLessThanOrEqual(opts.trans,1)} = 0.3;
+                            mustBeLessThanOrEqual(opts.trans,1)} = [];
                 opts.thresh {mustBeNumeric,...
                             mustBeGreaterThanOrEqual(opts.thresh,0),...
-                            mustBeLessThanOrEqual(opts.thresh,1)} = 0.1;
+                            mustBeLessThanOrEqual(opts.thresh,1)} = [];
                 opts.mask (:,:) logical = [];
-                opts.tPose logical = false;
+                opts.cmap (:,3) = [];
                 opts.solidRGB {mustBeNumeric} = [];
-                opts.name = [];
+                
             end
-            obj.purgeLayers;
-            
+
             %Layer is 3d matrix (x,y,nReps)
             layerData = squeeze(layerData);
-            newLayer = struct;
-            newLayer.name = opts.name;
-            newLayer.data = layerData;
-            newLayer.visible = opts.visible;
-            [~,~,newLayer.nReps] = size(layerData);
-            newLayer.viewRep = opts.viewRep;
-            newLayer.trans = opts.trans;
-            newLayer.thresh = opts.thresh;
-            newLayer.mask = opts.mask;
-            newLayer.tPose = opts.tPose;
-            newLayer.solidRGB = opts.solidRGB;
-            newLayer.normVal = [];
+            [~,~,nReps] = size(layerData);
+            if strcmp(type,'func')
+                %default formatting for fMRI
+                if isempty(opts.trans)
+                    opts.trans = 0.3;
+                end
+                if isempty(opts.thresh)
+                    opts.thresh = 0.3;
+                end
+                if isempty(opts.cmap)
+                    opts.cmap = jet(256);
+                end
+            else
+                %default formatting for sMRI
+                if isempty(opts.trans)
+                    opts.trans = 1;
+                end
+                if isempty(opts.thresh)
+                    opts.thresh = 0;
+                end
+                if isempty(opts.cmap)
+                    opts.cmap = gray(256);
+                end
+            end
+            newLayer = struct('name',opts.name,...
+                              'type',type,...
+                              'data',layerData,...
+                              'visible',opts.visible,...
+                              'tPose',opts.tPose,...
+                              'viewRep',opts.viewRep,...
+                              'nReps',nReps,...
+                              'trans',opts.trans,...
+                              'thresh',opts.thresh,...
+                              'mask',opts.mask,...
+                              'cmap',opts.cmap,...
+                              'solidRGB',opts.solidRGB,...
+                              'normVal',[]);
             obj.layers{end+1} = newLayer;
             layerInd = numel(obj.layers);
             obj.show;
-        end
-
-        function purgeLayers(obj)
-            %Honestly this isn't necessary
-            delInds = [];
-            for idx = 1:numel(obj.layers)
-                if isempty(obj.layers{idx})
-                    delInds(end+1) = idx;
-                end
-            end
-            for idx = 1:numel(delInds)
-                layerInd = delInds(idx);
-                obj.layers(layerInd) = [];
-            end
         end
 
         function [tileAxes,panels] = tileLayers(obj,m,n,inds,opts)
