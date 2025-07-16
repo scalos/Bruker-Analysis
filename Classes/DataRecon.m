@@ -725,7 +725,7 @@ classdef DataRecon < handle
                 for rep = reps
                     obj.rProcParamsCell{6,x,y,z,slice,rep} = baselines(:,rep);
                 end
-                obj.rData(:,x,y,z,slice,reps) = specStack(:,slice,reps);
+                obj.rData(:,x,y,z,slice,reps) = specStack(:,reps);
                 obj.updateProc;
             end
         end
