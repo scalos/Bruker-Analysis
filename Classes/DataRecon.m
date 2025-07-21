@@ -1551,27 +1551,23 @@ classdef DataRecon < handle
                     
                     switch plotParams.type
                         case 'kPlot'
-                            mrPlt = mrPlot("line",obj.kData(:,kx,ky,kz,slice,rep),ax,"mode",plotParams.mode);
-                            mrPlt.show;
+                            mrPlot("line",obj.kData(:,kx,ky,kz,slice,rep),ax,"mode",plotParams.mode);
                         case 'rPlot'
                             if strcmp(plotParams.xAx,'ppm')
-                                mrPlt = mrPlot("line",obj.rData(:,rx,ry,rz,slice,rep),ax,{obj.xppm},...
+                                mrPlot("line",obj.rData(:,rx,ry,rz,slice,rep),ax,{obj.xppm},...
                                                "mode",plotParams.mode);
                             else
-                                mrPlt = mrPlot("line",obj.rData(:,rx,ry,rz,slice,rep),ax,"mode",plotParams.mode);
+                                mrPlot("line",obj.rData(:,rx,ry,rz,slice,rep),ax,"mode",plotParams.mode);
                             end
-                            mrPlt.show;
                         case 'kImage'
-                            mrPlt = mrPlot("image",obj.kData(kInd,:,:,kz,slice,rep),ax,"mode",plotParams.mode);
-                            mrPlt.show;
+                            mrPlot("image",obj.kData(kInd,:,:,kz,slice,rep),ax,"mode",plotParams.mode);
                         case 'rImage'
-                            mrPlt = mrPlot("image",obj.rData(rInd,:,:,rz,slice,rep),ax,"mode",plotParams.mode);
-                            mrPlt.show;
+                            mrPlot("image",obj.rData(rInd,:,:,rz,slice,rep),ax,"mode",plotParams.mode);
                         case 'rStack'
-                            mrPlt = mrPlot("line_stack",obj.rData(:,rx,ry,rz,slice,:),ax,"mode",plotParams.mode);
-                            mrPlt.show;
                             if strcmp(plotParams.xAx,'ppm')
-                                set(mrPlt.ax.Children,'XData',obj.xppm);
+                                mrPlot("line_stack",obj.rData(:,rx,ry,rz,slice,:),ax,{obj.xppm,1:obj.nReps},"mode",plotParams.mode);
+                            else
+                                mrPlot("line_stack",obj.rData(:,rx,ry,rz,slice,:),ax,"mode",plotParams.mode);
                             end
                         otherwise
                             error('Invalid Linked Plot Type');

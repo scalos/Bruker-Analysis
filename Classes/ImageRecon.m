@@ -1,7 +1,6 @@
 classdef ImageRecon<handle
     
     properties
-        base = struct;
         layers;
         dispAx;
         rotAng = 0;
@@ -11,7 +10,9 @@ classdef ImageRecon<handle
                        'colorbar',struct('visible',false,...
                                          'targInd',1, ...
                                          'nTicks',5,...
-                                         'sigFigs',2),...
+                                         'sigFigs',2,...
+                                         'padding_LR',[0,0.1],...
+                                         'padding_UD',[0.05,0.05]),...
                        'grid',struct('visible',false,...
                                      'size',[],...
                                      'visRows',[],...
@@ -20,12 +21,16 @@ classdef ImageRecon<handle
                                      'outerRGB',[1,1,1],...
                                      'innerLW',2,...
                                      'outerLW',3 ...
-                                     ),...
-                       'fit_to_frame',true);
+                                     ));
             
         masks = {};
         
     end
+
+    properties (Dependent)
+        base;
+    end
+
 
     methods (Access = private)
 
@@ -60,12 +65,16 @@ classdef ImageRecon<handle
             baseLayer = obj.layers{obj.baseInd};
         end
 
+        function set.base(obj,baseStruct)
+            obj.layers{obj.baseInd} = baseStruct;
+        end
+
         function toFront(obj)
             fig = ancestor(obj.dispAx, 'figure');
             figure(fig);
         end
 
-        function mask_ = newMask(obj)
+        function newMask(obj)
             obj.toFront;
             maskSize = size(obj.base.data(:,:,1)');
             [mask_,saveMask] = drawMask(obj.dispAx,maskSize);
@@ -95,7 +104,7 @@ classdef ImageRecon<handle
             arguments
                  obj
                  roiMasks
-                 targetInd {mustBeInteger,mustBeGreaterThanOrEqual(targetInd,1)};
+                 targetInd {mustBeInteger,mustBeGreaterThanOrEqual(targetInd,1)} = 1;
                  opts.roi_RGB = [1,0,0];
                  opts.roi_Trans = 0.2;
                  opts.roiBd = true;
@@ -244,7 +253,6 @@ classdef ImageRecon<handle
                     opts.cmap = gray(256);
                 end
             end
-            cbAx = axes(Visible=false,HandleVisibility='on',Position = [0,0,1,1]);
             newLayer = struct('name',opts.name,...
                               'style',opts.style,...
                               'data',layerData,...
@@ -258,7 +266,6 @@ classdef ImageRecon<handle
                               'mask',opts.mask,...
                               'cmap',opts.cmap,...
                               'clim',opts.clim,...
-                              'cbAx',cbAx,...
                               'mode','abs');
             obj.layers{end+1} = newLayer;
             layerInd = numel(obj.layers);
@@ -280,6 +287,8 @@ classdef ImageRecon<handle
                               mustBeLessThanOrEqual(opts.spacing,1)}= 0;
                 opts.panel_hSqueeze {mustBeGreaterThanOrEqual(opts.panel_hSqueeze,0),...
                               mustBeLessThanOrEqual(opts.panel_hSqueeze,1)}= 0;
+                opts.autoThresh = false;
+                opts.autoCB = true;
             end
             if isempty(inds)
                 inds = 1:numel(obj.layers);
@@ -306,7 +315,7 @@ classdef ImageRecon<handle
                 col = mod(idx - 1, n) + 1;
                 panel.Position(1) = panel.Position(1)-opts.panel_hSqueeze*(col-1);
                 obj.dispAx = axes('Parent',panel);
-                obj.show;
+                obj.show("autoCB",opts.autoCB,"autoThresh",opts.autoThresh);
                 if ~isempty(opts.zoom)
                     axis(obj.dispAx,opts.zoom);
                 end
@@ -390,7 +399,7 @@ classdef ImageRecon<handle
                 obj 
                 ind 
                 opts.dt = 0.1;
-                opts.frames (2,1) {mustBeInteger} = [];
+                opts.frames {mustBeInteger} = [];
             end
         
             initRep = obj.layers{ind}.viewRep;
@@ -427,6 +436,16 @@ classdef ImageRecon<handle
             tbl = listStructFields({obj.layers{inds}},fields);
         end
 
+        function spreadParams(obj,refInd,spreadInds,fields)
+            refLayer = obj.layers{refInd};
+            spreadLayers = {obj.layers{spreadInds}}; %#ok<CCAT1>
+            newLayers = spreadStructFields(refLayer,spreadLayers,fields);
+            for idx = 1:numel(spreadInds)
+                ind = spreadInds(idx);
+                obj.layers{ind} = newLayers{idx};
+            end
+        end
+
         function show(obj,opts)
             arguments
                 obj
@@ -435,14 +454,21 @@ classdef ImageRecon<handle
             end
 
             if isempty(obj.dispAx)||~isvalid(obj.dispAx)
-                ax = axes(figure,Visible='off');
+                ax = axes(figure);
                 obj.dispAx = ax;
             else
                 ax = obj.dispAx;
             end
             cbTargInd = obj.prefs.colorbar.targInd;
             if obj.prefs.colorbar.visible
-                set(ax,'Position',[0,0.05,0.9,0.9]);
+                pos = [0,0,1,1];
+                padLR = obj.prefs.colorbar.padding_LR;
+                padUD = obj.prefs.colorbar.padding_UD;
+                pos(1) = padLR(1);
+                pos(2) = padUD(1);
+                pos(3) = 1-padLR(2)-padLR(1);
+                pos(4) = 1-padUD(2)-padUD(2);
+                set(ax,'Position',pos);
                 %autoTargInd:
                 if opts.autoCB
                     currVis = obj.whosVis;
@@ -480,7 +506,8 @@ classdef ImageRecon<handle
             for lInd = 1:numel(obj.layers)
                 if obj.layers{lInd}.visible
                     layer = obj.layers{lInd};
-                    layerData = squeeze(eval(sprintf('%s(layer.data(:,:,1))',layer.mode)));
+                    rep = layer.viewRep;
+                    layerData = squeeze(eval(sprintf('%s(layer.data(:,:,%d))',layer.mode,rep)));
                     if ~layer.tPose
                         layerData = layerData';
                     end

@@ -186,24 +186,28 @@ classdef BrukerStudy < handle
             % directory number
             expmt = [];
             found = false;
-            for ind = (1:length(obj.expmts))
-                try
-                    expmtNum = obj.expmts{ind}.num;
-                catch
-                    continue
+            if isscalar(num)
+                for ind = (1:length(obj.expmts))
+                    try
+                        expmtNum = obj.expmts{ind}.num;
+                    catch
+                        continue
+                    end
+                    if expmtNum == num
+                       expmt = obj.expmts{ind};
+                       found = true;
+                    end
                 end
-                if expmtNum == num
-                   expmt = obj.expmts{ind};
-                   found = true;
+                if ~found
+                    if find(obj.getNums==num)
+                        fprintf('Experiment %2d is not loaded!\n',num);
+                    else
+                        warning("Couldn't find experiment %d\n" + ...
+                        "(NOTE: number refers to folder number not (E##) in name)\n",num);
+                    end
                 end
-            end
-            if ~found
-                if find(obj.getNums==num)
-                    fprintf('Experiment %2d is not loaded!\n',num);
-                else
-                    warning("Couldn't find experiment %d\n" + ...
-                    "(NOTE: number refers to folder number not (E##) in name)\n",num);
-                end
+            else
+                error('ERROR: Method intended to grab one experiment at a time!');
             end
         end
     end
