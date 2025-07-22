@@ -50,7 +50,11 @@ function mrPlot(type,data,ax,axMaps,prefs)
                 plot(ax,data_);
             end
         case 'spiral'
-            if ~isempty()
+            if ~isempty(axMaps_{1})
+                plot3(ax,axMaps_{1},real(data)',imag(data)');
+            else
+                plot3(ax,real(data)',imag(data)');
+            end
         case 'image'
             imagesc(ax,axMaps_{1},axMaps_{2},data_');
             if ~isempty(prefs.cmap)
