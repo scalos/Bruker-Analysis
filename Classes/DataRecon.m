@@ -716,7 +716,7 @@ classdef DataRecon < handle
                 delete(ax.Parent);
                 fig = [];
             else
-                if isvalid(ax)
+                if opts.interact && isvalid(ax)
                     fig = ax.Parent;
                 end
             end
@@ -916,7 +916,9 @@ classdef DataRecon < handle
                         end
                     end
                 end
-                delete(ax.Parent);
+                if isvalid(ax)
+                    delete(ax.Parent);
+                end
             end
             obj.updateProc;
         end
@@ -1542,36 +1544,35 @@ classdef DataRecon < handle
                     continue
                 end
                 plotParams = linkedPlot.params;
-
-                if strcmp(plotParams.type,'spiral')
-                        plot3(ax,obj.xppm, ...
-                            real(squeeze(obj.rData(:,kx,ky,kz,slice,rep)))',...
-                            imag(squeeze(obj.rData(:,kx,ky,kz,slice,rep)))');
-                else
-                    
-                    switch plotParams.type
-                        case 'kPlot'
-                            mrPlot("line",obj.kData(:,kx,ky,kz,slice,rep),ax,"mode",plotParams.mode);
-                        case 'rPlot'
-                            if strcmp(plotParams.xAx,'ppm')
-                                mrPlot("line",obj.rData(:,rx,ry,rz,slice,rep),ax,{obj.xppm},...
-                                               "mode",plotParams.mode);
-                            else
-                                mrPlot("line",obj.rData(:,rx,ry,rz,slice,rep),ax,"mode",plotParams.mode);
-                            end
-                        case 'kImage'
-                            mrPlot("image",obj.kData(kInd,:,:,kz,slice,rep),ax,"mode",plotParams.mode);
-                        case 'rImage'
-                            mrPlot("image",obj.rData(rInd,:,:,rz,slice,rep),ax,"mode",plotParams.mode);
-                        case 'rStack'
-                            if strcmp(plotParams.xAx,'ppm')
-                                mrPlot("line_stack",obj.rData(:,rx,ry,rz,slice,:),ax,{obj.xppm,1:obj.nReps},"mode",plotParams.mode);
-                            else
-                                mrPlot("line_stack",obj.rData(:,rx,ry,rz,slice,:),ax,"mode",plotParams.mode);
-                            end
-                        otherwise
-                            error('Invalid Linked Plot Type');
-                    end
+                switch plotParams.type
+                    case 'kPlot'
+                        mrPlot("line",obj.kData(:,kx,ky,kz,slice,rep),ax,"mode",plotParams.mode);
+                    case 'rPlot'
+                        if strcmp(plotParams.xAx,'ppm')
+                            mrPlot("line",obj.rData(:,rx,ry,rz,slice,rep),ax,{obj.xppm},...
+                                           "mode",plotParams.mode);
+                        else
+                            mrPlot("line",obj.rData(:,rx,ry,rz,slice,rep),ax,"mode",plotParams.mode);
+                        end
+                    case 'spiral'
+                        if strcmp(plotParams.xAx,'ppm')
+                            mrPlot("spiral",obj.rData(:,rx,ry,rz,slice,rep),ax,{obj.xppm},...
+                                           "mode",plotParams.mode);
+                        else
+                            mrPlot("spiral",obj.rData(:,rx,ry,rz,slice,rep),ax,"mode",plotParams.mode);
+                        end
+                    case 'kImage'
+                        mrPlot("image",obj.kData(kInd,:,:,kz,slice,rep),ax,"mode",plotParams.mode);
+                    case 'rImage'
+                        mrPlot("image",obj.rData(rInd,:,:,rz,slice,rep),ax,"mode",plotParams.mode);
+                    case 'rStack'
+                        if strcmp(plotParams.xAx,'ppm')
+                            mrPlot("line_stack",obj.rData(:,rx,ry,rz,slice,:),ax,{obj.xppm,1:obj.nReps},"mode",plotParams.mode);
+                        else
+                            mrPlot("line_stack",obj.rData(:,rx,ry,rz,slice,:),ax,"mode",plotParams.mode);
+                        end
+                    otherwise
+                        error('Invalid Linked Plot Type');
                 end
                 reHold = ishold(ax);
                 if obj.prefs.showFoc
@@ -1595,7 +1596,7 @@ classdef DataRecon < handle
             end
         end
         
-        function tiles = showLayout(obj,type)
+        function showLayout(obj,type)
             % Add commonly used linkedPlot setups here. This is simply a
             % wrapper function to create arrangements of linked plots
             % within tiled layouts. Currently supported layouts are:
@@ -1627,7 +1628,7 @@ classdef DataRecon < handle
                    tiles.Padding = "compact";
                    tiles.TileSpacing = 'compact';
                    obj.linkPlot(nexttile,'type','kPlot','mode','abs');
-                   obj.linkPlot(nexttile,'type','rStack','mode','abs');
+                   obj.linkPlot(nexttile,'type','rStack','mode','abs','xAx','ppm');
                    obj.linkPlot(nexttile,'type','rPlot','mode','abs','xAx','ppm');
                    obj.linkPlot(nexttile,'type','rPlot','mode','real','xAx','ppm');
 
@@ -1636,7 +1637,7 @@ classdef DataRecon < handle
                    tiles.Padding = "compact";
                    tiles.TileSpacing = 'compact';
                    obj.linkPlot(nexttile,"type","rImage","mode","abs");
-                   obj.linkPlot(nexttile,'type','rStack','mode','abs');
+                   obj.linkPlot(nexttile,'type','rStack','mode','abs','xAx','ppm');
                    obj.linkPlot(nexttile,'type','rPlot','mode','abs','xAx','ppm');
                    obj.linkPlot(nexttile,'type','rPlot','mode','real','xAx','ppm');
                 otherwise
@@ -1785,24 +1786,24 @@ classdef DataRecon < handle
             end
             M(obj.nReps) = struct('cdata',[],'colormap',[]);
             for rep = (1:obj.nReps)
-                switch opts.mode
-                    case 'real'
-                        plot(ax,obj.xppm,real(obj.rData(:,x,y,z,slice,rep)));
-                    case 'imag'
-                        plot(ax,obj.xppm,imag(obj.rData(:,x,y,z,slice,rep)));
-                    case 'abs'
-                        plot(ax,obj.xppm,abs(obj.rData(:,x,y,z,slice,rep)));
-                end  
-                if isvalid(ax)
+                try
+                    switch opts.mode
+                        case 'real'
+                            plot(ax,obj.xppm,real(obj.rData(:,x,y,z,slice,rep)));
+                        case 'imag'
+                            plot(ax,obj.xppm,imag(obj.rData(:,x,y,z,slice,rep)));
+                        case 'abs'
+                            plot(ax,obj.xppm,abs(obj.rData(:,x,y,z,slice,rep)));
+                    end  
                     obj.setupPlot(ax,"type","rPlot","mode","real","xAx","ppm");
                     subtitle(ax,sprintf('Rep %d',rep));
                     xlim(ax,[xmin,xmax]);
                     ylim(ax,[ymin,ymax]);
                     drawnow;
                     pause(opts.dt);
-                    if isvalid(ax) %annoying but necessary bc of pause
-                        M(rep) = getframe(ax);
-                    end
+                catch
+                    %assume: ax no longer valid
+                    continue
                 end
             end
             if isvalid(ax)
