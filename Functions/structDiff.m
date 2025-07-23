@@ -51,7 +51,7 @@ function diffTbl = structDiff(structs,names)
         for sInd = 1:numel(structs)
             s = structs{sInd};
             if isfield(s,f)
-                val = string(s.(f));
+                val = s.(f);
             else
                 val = NaN;
             end

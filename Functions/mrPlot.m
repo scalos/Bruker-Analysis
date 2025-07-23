@@ -50,7 +50,11 @@ function mrPlot(type,data,ax,axMaps,prefs)
                 plot(ax,data_);
             end
         case 'spiral'
+<<<<<<< HEAD
             %pass
+=======
+            
+>>>>>>> testing
         case 'image'
             imagesc(ax,axMaps_{1},axMaps_{2},data_');
             if ~isempty(prefs.cmap)

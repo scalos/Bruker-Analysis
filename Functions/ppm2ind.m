@@ -8,4 +8,5 @@ function idxs = ppm2ind(xppm,ppmVal)
         [~,idx] = min(abs(xppm-ppmVal(ind)));
         idxs(ind) = idx;
     end
+    idxs = sort(idxs);
 end
