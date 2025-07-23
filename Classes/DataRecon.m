@@ -799,7 +799,10 @@ classdef DataRecon < handle
                 end
                 ax = axes(figure);
                 psSpec = ps(specData,phi0,pivotInd,phi1);
-                plot(ax,obj.xppm,real(psSpec));
+                mrPlot("spiral",psSpec,ax,{obj.xppm});
+                ppmStep = round((max(obj.xppm)-min(obj.xppm))/(20*5))*5;
+                obj.setupPlot(ax,"type",'spiral','ppmStep',ppmStep,'xAx','ppm');
+                view(ax,0,90);
                 axis(ax,'padded');
                 zoom(ax,'reset');
                 saved = false;
@@ -809,12 +812,18 @@ classdef DataRecon < handle
                     else
                         pivotInd = pivotVal;
                     end
+                    if ~isvalid(ax)
+                        ax = axes(figure); %#ok<LAXES>
+                    end
                     xLim = ax.XLim;
                     yLim = ax.YLim;
-                    plot(ax,obj.xppm,real(ps(specData,phi0,pivotInd,phi1)));
+                    %plot(ax,obj.xppm,real(ps(specData,phi0,pivotInd,phi1)));
+                    v = get(ax,'View');
+                    mrPlot("spiral",ps(specData,phi0,pivotInd,phi1),ax,{obj.xppm});
+                    view(ax,v(1),v(2));
                     axis(ax,'padded');
                     zoom(ax,'reset');
-                    obj.setupPlot(ax,type="rPlot",mode="real",xAx="ppm");
+                    obj.setupPlot(ax,type="spiral",xAx="ppm",ppmStep=ppmStep);
                     ax.XLim = xLim;
                     ax.YLim = yLim;
                     res = input(sprintf("phi0,pivot,phi1,step = [%08.4f,%08.4f,%08.4f,%08.4f]",phi0,pivotVal,phi1,step),"s");
@@ -1470,6 +1479,18 @@ classdef DataRecon < handle
                             xlabel(ax,'Chemical Shift (ppm)');
                             ylabel(ax,'MR Signal (a.u.)');
                         end
+                    case 'spiral'
+                        if strcmp(params.xAx,'ind')
+                            xlabel('Frequency (index)');
+                            ylabel(ax,'In-Phase MR Signal (a.u.)');
+                            zlabel(ax,'Quadriture MR Signal (a.u.)');
+                        else
+                            xticks(ax,round((obj.xppm(1):params.ppmStep:obj.xppm(end))/params.ppmStep)*params.ppmStep);
+                            set(ax,'xdir','reverse');
+                            xlabel(ax,'Chemical Shift (ppm)');
+                            ylabel(ax,'In-Phase MR Signal (a.u.)');
+                            zlabel(ax,'Quadriture MR Signal (a.u.)');
+                        end
 
                     case 'rStack'
                         title(ax,sprintf('Spectral Stack (%s)',params.mode));
@@ -1706,28 +1727,31 @@ classdef DataRecon < handle
                 obj 
                 ax 
                 opts.type {mustBeMember(opts.type,{'kPlot','rPlot','kImage','rImage','rStack','spiral'})};
-                opts.mode {mustBeMember(opts.mode,{'abs','real','imag'})};
+                opts.mode {mustBeMember(opts.mode,{'abs','real','imag'})} = 'abs';
                 opts.xAx {mustBeMember(opts.xAx,{'ind','ppm'})} = 'ind';
             end
-            %cla(ax);
-            delInds = [];
-            for idx = (1:length(obj.linkedPlots))
-                if obj.linkedPlots{idx}.ax == ax
-                    delInds(end+1) = idx; %#ok<AGROW>
+            if isvalid(ax)
+                delInds = [];
+                for idx = (1:length(obj.linkedPlots))
+                    if obj.linkedPlots{idx}.ax == ax
+                        delInds(end+1) = idx; %#ok<AGROW>
+                    end
                 end
-            end
-            for ind = (1:length(delInds))
-                if ind<=length(obj.linkedPlots)
-                    obj.linkedPlots(delInds(ind)) = [];
+                for ind = (1:length(delInds))
+                    if ind<=length(obj.linkedPlots)
+                        obj.linkedPlots(delInds(ind)) = [];
+                    end
+                    obj.linkedPlots = squeeze(obj.linkedPlots);
                 end
-                obj.linkedPlots = squeeze(obj.linkedPlots);
+                plotParams = struct('mode',opts.mode, ...
+                                    'type',opts.type, ...
+                                    'xAx',opts.xAx);
+                obj.linkedPlots{end+1} = struct('ax',ax, ...
+                                                'params',plotParams);
+                obj.updateLinkedPlots;
+            else
+                error('ERROR: Invalid axes handle!');
             end
-            plotParams = struct('mode',opts.mode, ...
-                                'type',opts.type, ...
-                                'xAx',opts.xAx);
-            obj.linkedPlots{end+1} = struct('ax',ax, ...
-                                            'params',plotParams);
-            obj.updateLinkedPlots;
         end
    
         function M = visualizeDecay(obj,opts)
