@@ -70,8 +70,10 @@ classdef ImageRecon<handle
         end
 
         function toFront(obj)
-            fig = ancestor(obj.dispAx, 'figure');
-            figure(fig);
+            if isvalid(obj.dispAx)
+                fig = ancestor(obj.dispAx, 'figure');
+                figure(fig);
+            end
         end
 
         function newMask(obj)
@@ -451,11 +453,13 @@ classdef ImageRecon<handle
                 obj
                 opts.autoThresh = false
                 opts.autoCB = true;
+                opts.clearFig = true;
             end
 
             if isempty(obj.dispAx)||~isvalid(obj.dispAx)
                 ax = axes(figure);
                 obj.dispAx = ax;
+                
             else
                 ax = obj.dispAx;
             end
@@ -489,15 +493,17 @@ classdef ImageRecon<handle
             obj.toFront;
 
             cla(ax);
-            children = get(ax.Parent,'Children');
-            for idx = 1:numel(children)
-                child = children(idx);
-                if child ~=ax
-                    delete(child)
+            if opts.clearFig
+                children = get(ax.Parent,'Children');
+                for idx = 1:numel(children)
+                    child = children(idx);
+                    if child ~=ax
+                        delete(child)
+                    end
                 end
             end
             
-            baseLayer = obj.layers{obj.baseInd};
+            baseLayer = obj.base;
             if baseLayer.tPose
                 baseSize = size(squeeze(baseLayer.data(:,:,1)));
             else
