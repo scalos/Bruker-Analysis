@@ -1556,6 +1556,7 @@ classdef DataRecon < handle
 
             rInd = obj.focus.rInd;
             kInd = obj.focus.kInd;
+            %purge linkedPlots:
             obj.linkedPlots = obj.linkedPlots(~cellfun(@isempty,obj.linkedPlots));
             for ind = (1:length(obj.linkedPlots))
                 linkedPlot = obj.linkedPlots{ind};
@@ -1615,6 +1616,8 @@ classdef DataRecon < handle
                                             xAx = plotParams.xAx, ...
                                             ppmStep=ppmStep);
             end
+            %purge linkedPlots:
+            obj.linkedPlots = obj.linkedPlots(~cellfun(@isempty,obj.linkedPlots));
         end
         
         function showLayout(obj,type)
@@ -1733,8 +1736,10 @@ classdef DataRecon < handle
             if isvalid(ax)
                 delInds = [];
                 for idx = (1:length(obj.linkedPlots))
-                    if obj.linkedPlots{idx}.ax == ax
-                        delInds(end+1) = idx; %#ok<AGROW>
+                    if ~isempty(obj.linkedPlots{idx})
+                        if obj.linkedPlots{idx}.ax == ax
+                            delInds(end+1) = idx; %#ok<AGROW>
+                        end
                     end
                 end
                 for ind = (1:length(delInds))
