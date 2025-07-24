@@ -9,7 +9,6 @@ classdef DataRecon < handle
         dimX = NaN
         dimY = NaN
         dimZ = NaN
-        nSlices = NaN;
         nReps = NaN
         analysis = {};
         kProcParams;
@@ -129,8 +128,8 @@ classdef DataRecon < handle
             %   if data size is len 5 it is assumed to already be in the 
             %   right shape unless different datashape is also passed to the constructor
             if isempty(obj.sysParams.dataShape)
-                if length(size(data))~=6
-                    error(['Data must be of shape: nPoints x dimX x dimY x dimZ x nSlices x nReps' ...
+                if length(size(data))~=5
+                    error(['Data must be of shape: nPoints x dimX x dimY x dimZ x nReps' ...
                         ' or shape must be specified']);
                 else
                     obj.setDims;
@@ -179,8 +178,8 @@ classdef DataRecon < handle
         function params = get.rProcParams(obj)
            %Parses rProcParams array and returns param structure of voxel
            %indicated by focus.
-           [x,y,z,slice,rep] = obj.getFocus("r");
-           paramsArr = obj.rProcParamsCell(:,x,y,z,slice,rep);
+           [x,y,z,rep] = obj.getFocus("r");
+           paramsArr = obj.rProcParamsCell(:,x,y,z,rep);
            params = struct('phi0',paramsArr(1), ...
                            'phi1',paramsArr(2), ...
                            'pivotVal',paramsArr(3), ...
@@ -199,15 +198,15 @@ classdef DataRecon < handle
             end
             sFields = fieldnames(s);
             fields = fieldnames(obj.rProcParams);
-            [x,y,z,slice,rep] = obj.getFocus('r');
-            paramsArr = squeeze(obj.rProcParamsCell(:,x,y,z,slice,rep));
+            [x,y,z,rep] = obj.getFocus('r');
+            paramsArr = squeeze(obj.rProcParamsCell(:,x,y,z,rep));
             for idx = (1:length(sFields))
                 ind = find(strcmp(fields,sFields{idx}), 1);
                 if ~isempty(ind)
                     paramsArr(idx) = {s.(sFields{idx})};
                 end
             end
-            obj.rProcParamsCell(:,x,y,z,slice,rep) = paramsArr;
+            obj.rProcParamsCell(:,x,y,z,rep) = paramsArr;
         end
         
         function val = get.xppm(obj)
@@ -219,7 +218,7 @@ classdef DataRecon < handle
             end
         end
 
-        function [x,y,z,slice,rep] = getFocus(obj,r_k)
+        function [x,y,z,rep] = getFocus(obj,r_k)
             arguments
                 obj 
                 r_k {mustBeMember(r_k,{'r','k'})};
@@ -233,7 +232,6 @@ classdef DataRecon < handle
                 y = obj.focus.kXYZ(2);
                 z = obj.focus.kXYZ(3);
             end
-            slice = obj.focus.slice;
             rep = obj.focus.viewRep;
         end
         
@@ -253,16 +251,16 @@ classdef DataRecon < handle
                 obj.kDataRaw = reshape(obj.kDataRaw,shape);
                 obj.rData = reshape(obj.rData,shape);
                 obj.rDataRaw = reshape(obj.rDataRaw,shape);
-                [obj.nPoints,obj.dimX,obj.dimY,obj.dimZ,obj.nSlices,obj.nReps] = size(obj.kData);
+                [obj.nPoints,obj.dimX,obj.dimY,obj.dimZ,obj.nReps] = size(obj.kData);
                 
             else
-                [obj.nPoints,obj.dimX,obj.dimY,obj.dimZ,obj.nSlices,obj.nReps] = size(obj.kData);                
+                [obj.nPoints,obj.dimX,obj.dimY,obj.dimZ,obj.nReps] = size(obj.kData);                
             end
         end
 
         function resetRProc(obj)
             obj.setDims;
-            procSize = [6,obj.dimX,obj.dimY,obj.dimZ,obj.nSlices,obj.nReps];
+            procSize = [6,obj.dimX,obj.dimY,obj.dimZ,obj.nReps];
             obj.rProcParamsCell = cell(procSize);
         end
         
@@ -274,15 +272,10 @@ classdef DataRecon < handle
             % certain voxels use region = {(x1,...,xn),
             %                              (y1,...,zn),
             %                              (z1,...,zn),
-            %                              (slice1,...,slicen),
             %                              (rep1,...repn)}
             %   NOTE: if zf is reverted then the obj focus will be reset
             %   since it cannot be guarenteed that the existing focus won't
             %   be out of range for the new data size.
-            %
-            %   TODO: if data is loaded with 'R' flag in constructor it
-            %   doesn't make sense to allow reversion of k-space proc
-            %   params blank,lb,zf so these should be restricted.
             arguments
                 obj;
                 toRevert {mustBeMember(toRevert,{'all', ...
@@ -291,15 +284,14 @@ classdef DataRecon < handle
                                                  'zf', ...
                                                  'Foc_Baseline', ...
                                                  'Foc_Phase',...
-                                                 'All_Baselines',...
-                                                 'All_Phases'})} = 'all'
+                                                 'Region_Baselines',...
+                                                 'Region_Phases'})} = 'all'
                 region = [];
             end
             if isempty(region)
                 region = {1:obj.dimX;...
                           1:obj.dimY;...
                           1:obj.dimZ;...
-                          1:obj.nSlices;...
                           1:obj.nReps};
             end
             [x,y,z,~] = obj.getFocus("r");
@@ -319,14 +311,14 @@ classdef DataRecon < handle
                     obj.kProcParams.zf = [];
                     obj.resetFocus;
                 case 'Foc_Baseline'
-                    region = {x,y,z,1:obj.nSlices,1:obj.nReps};
+                    region = {x,y,z,1:obj.nReps};
                     obj.resetBaselines(region);
                 case 'Foc_Phase'
-                    region = {x,y,z,1:obj.nSlices,1:obj.nReps};
+                    region = {x,y,z,1:obj.nReps};
                     obj.resetPhasing(region);
-                case 'All_Baselines'
+                case 'Region_Baselines'
                     obj.resetBaselines(region);
-                case 'All_Phases'
+                case 'Region_Phases'
                     obj.resetPhasing(region);
                 otherwise
                     warning('Not a valid revert request!');
@@ -345,11 +337,10 @@ classdef DataRecon < handle
                 region = {1:obj.dimX;...
                           1:obj.dimY;...
                           1:obj.dimZ;...
-                          1:obj.nSlices;...
                           1:obj.nReps};
             end
             regionSize = [1,length(region{1}),length(region{2}),...
-                          length(region{3}),length(region{4}),length(region{5})];
+                          length(region{3}),length(region{4})];
             obj.rProcParamsCell(6,region{:}) = cell(regionSize);
         end
 
@@ -364,15 +355,14 @@ classdef DataRecon < handle
                 region = {1:obj.dimX;...
                           1:obj.dimY;...
                           1:obj.dimZ;...
-                          1:obj.nSlices;...
                           1:obj.nReps};
             end
             regionSize = [5,length(region{1}),length(region{2}),...
-                          length(region{3}),length(region{4}),length(region{5})];
+                          length(region{3}),length(region{4})];
             obj.rProcParamsCell(1:5,region{:}) = cell(regionSize);
         end
 
-        function update(obj)
+        function updateAll(obj)
             obj.updateLinkedPlots;
             obj.updateProc;
         end
@@ -401,7 +391,6 @@ classdef DataRecon < handle
                     if ~isempty(obj.kProcParams.zf)
                         obj.kData = zFill(obj.kData,obj.kProcParams.zf);
                         obj.setDims;
-                        obj.resetRProc;
                     end
                 end
                 
@@ -419,6 +408,8 @@ classdef DataRecon < handle
     
                 obj.rData = obj.rData.*exp(1i*deg2rad(cell2mat(phaseMat_curr)));
                 obj.rData = obj.rData - cell2mat(baseMat_curr);
+            else
+                obj.resetRProc;
             end
 
             obj.kProc_cashed = obj.kProcParams;
@@ -427,7 +418,7 @@ classdef DataRecon < handle
 
         function resetFocus(obj)
             %Set/Initialize focus to default
-            obj.focus = struct('viewRep',1,'kInd',1,'rInd',1,'kXYZ',[1,1,1],'rXYZ',[1,1,1],'slice',1);
+            obj.focus = struct('viewRep',1,'kInd',1,'rInd',1,'kXYZ',[1,1,1],'rXYZ',[1,1,1]);
         end
 
         %%%%%%%%%%%%% CORE PROCESSING FUNCTIONS %%%%%%%%%%%%%%%%%
@@ -497,7 +488,7 @@ classdef DataRecon < handle
                 firstOrder = NaN %deg
             end
             % obj.suppressFShow = true;
-            [x,y,z,slice,rep] = obj.getFocus("r");
+            [x,y,z,rep] = obj.getFocus("r");
             params = obj.rProcParams;
             
             if isnan(zeroOrder)
@@ -531,16 +522,16 @@ classdef DataRecon < handle
                     end
                     switch pivotSetting
                         case 'ppm'
-                            [~,pivotInd] = min(abs(obj.xppm-pivotVal));
+                            pivotInd = ppm2ind(obj.xppm,pivotVal);
                         case 'ind'
                             pivotInd = pivotVal;
                         otherwise
                             error("Valid pivot settings are: 'ppm' or 'ind'");
                     end
-                    [~,phase] = ps(obj.rData(:,x,y,z,slice,rep),zeroOrder,pivotInd,firstOrder);
+                    [~,phase] = ps(obj.rData(:,x,y,z,rep),zeroOrder,pivotInd,firstOrder);
                     params.appliedPhase = phase;
                 else
-                    [~,phase] = ps(obj.rData(:,x,y,z,slice,rep),zeroOrder);
+                    [~,phase] = ps(obj.rData(:,x,y,z,rep),zeroOrder);
                     params.appliedPhase = phase;
                 end
             end
@@ -585,8 +576,8 @@ classdef DataRecon < handle
                 opts.interact logical = true;
                 opts.keepFig logical = false;
             end
-            [x,y,z,slice,~] = obj.getFocus('r');
-            specStackRaw = squeeze(obj.rData(:,x,y,z,slice,:));
+            [x,y,z,~] = obj.getFocus('r');
+            specStackRaw = squeeze(obj.rData(:,x,y,z,:));
             specStack = specStackRaw;
             if isempty(reps)
                 reps = (1:obj.nReps);
@@ -723,9 +714,9 @@ classdef DataRecon < handle
 
             if applyBase
                 for rep = reps
-                    obj.rProcParamsCell{6,x,y,z,slice,rep} = baselines(:,rep);
+                    obj.rProcParamsCell{6,x,y,z,rep} = baselines(:,rep);
                 end
-                obj.rData(:,x,y,z,slice,reps) = specStack(:,reps);
+                obj.rData(:,x,y,z,reps) = specStack(:,reps);
                 obj.updateProc;
             end
         end
@@ -734,14 +725,13 @@ classdef DataRecon < handle
             %Allows user to perform interactive linear phasing on voxel
             %specified by obj.focus.
             % - reps: which reps of voxel to apply phasing to. by default
-            %   phasing is calculated for all reps but the first rep in
-            %   the series is used for display
-            % - opts.show (F => supress listener)
+            %   phasing is calculated for all reps but the current viewRep
+            %   is used for display
             arguments
                 obj;
                 reps = [];
             end
-            [x,y,z,slice,rep] = obj.getFocus("r");
+            [x,y,z,rep] = obj.getFocus("r");
             params = obj.rProcParams;
             if isempty(reps)
                 reps = (1:obj.nReps);
@@ -755,11 +745,11 @@ classdef DataRecon < handle
             step = 10;
             pivotVal = params.pivotVal;
             if ~isempty([phi0,phi1,pivotVal])
-                obj.revert("All_Phases",{x,y,z,slice,reps});
-                specData = obj.rData(:,x,y,z,slice,rep);
+                obj.revert("All_Phases",{x,y,z,reps});
+                specData = obj.rData(:,x,y,z,rep);
                 obj.applyPhase(phi0,pivotVal,params.pivotMode,phi1);
             else
-                specData = obj.rData(:,x,y,z,slice,rep);
+                specData = obj.rData(:,x,y,z,rep);
             end
             if isempty(phi0)
                 phi0 = 0;
@@ -778,7 +768,7 @@ classdef DataRecon < handle
                     res = input('Warning! Remove existing baseline? (y/esc)','s');
                     switch res
                         case 'y'
-                            obj.revert("All_Baselines",{x,y,z,slice,reps});
+                            obj.revert("All_Baselines",{x,y,z,reps});
                             proceed = true;
                             deciding = false;
                         case 'esc'
@@ -817,7 +807,6 @@ classdef DataRecon < handle
                     end
                     xLim = ax.XLim;
                     yLim = ax.YLim;
-                    %plot(ax,obj.xppm,real(ps(specData,phi0,pivotInd,phi1)));
                     v = get(ax,'View');
                     mrPlot("spiral",ps(specData,phi0,pivotInd,phi1),ax,{obj.xppm});
                     view(ax,v(1),v(2));
@@ -882,11 +871,11 @@ classdef DataRecon < handle
                             end
                             for rep = reps
                                 [~,phase] = ps(specData,params.phi0,pivotInd,params.phi1);
-                                obj.rProcParamsCell{1,x,y,z,slice,rep} = params.phi0;
-                                obj.rProcParamsCell{2,x,y,z,slice,rep} = params.phi1;
-                                obj.rProcParamsCell{3,x,y,z,slice,rep} = params.pivotVal;
-                                obj.rProcParamsCell{4,x,y,z,slice,rep} = params.pivotMode;
-                                obj.rProcParamsCell{5,x,y,z,slice,rep} = phase;
+                                obj.rProcParamsCell{1,x,y,z,rep} = params.phi0;
+                                obj.rProcParamsCell{2,x,y,z,rep} = params.phi1;
+                                obj.rProcParamsCell{3,x,y,z,rep} = params.pivotVal;
+                                obj.rProcParamsCell{4,x,y,z,rep} = params.pivotMode;
+                                obj.rProcParamsCell{5,x,y,z,rep} = phase;
                             end                            
                             keepGoing = false;
                             saved = true;
@@ -911,11 +900,11 @@ classdef DataRecon < handle
                                 end
                                 for rep = reps
                                     [~,phase] = ps(specData,params.phi0,pivotInd,params.phi1);
-                                    obj.rProcParamsCell{1,x,y,z,slice,rep} = params.phi0;
-                                    obj.rProcParamsCell{2,x,y,z,slice,rep} = params.phi1;
-                                    obj.rProcParamsCell{3,x,y,z,slice,rep} = params.pivotVal;
-                                    obj.rProcParamsCell{4,x,y,z,slice,rep} = params.pivotMode;
-                                    obj.rProcParamsCell{5,x,y,z,slice,rep} = phase;
+                                    obj.rProcParamsCell{1,x,y,z,rep} = params.phi0;
+                                    obj.rProcParamsCell{2,x,y,z,rep} = params.phi1;
+                                    obj.rProcParamsCell{3,x,y,z,rep} = params.pivotVal;
+                                    obj.rProcParamsCell{4,x,y,z,rep} = params.pivotMode;
+                                    obj.rProcParamsCell{5,x,y,z,rep} = phase;
                                 end    
                                 deciding = false;
                             case 'n'
@@ -960,7 +949,7 @@ classdef DataRecon < handle
                 opts.showPhases = false;
             end
             tic;
-            [~,~,z,slice,~] = obj.getFocus("r");
+            [~,~,z,~] = obj.getFocus("r");
             ints = zeros(obj.dimX,obj.dimY);
             if opts.showProc
                 ax = axes(figure);
@@ -972,8 +961,8 @@ classdef DataRecon < handle
             end
             switch bdsType
                 case 'ppm'
-                    [~,bds(1)] = min(abs(obj.xppm-bds(1)));
-                    [~,bds(2)] = min(abs(obj.xppm-bds(2)));
+                    bds(1) = ppm2ind(obj.xppm,bds(1));
+                    bds(2) = ppm2ind(obj.xppm,bds(2));
                 case 'ind'
                     %do nothing
                 otherwise
@@ -983,7 +972,7 @@ classdef DataRecon < handle
             specs = zeros(numel(bds(1):bds(2)),obj.dimX,obj.dimY,z);
             count = 0;
             zeroPhases = zeros(size(ints));
-            specs_raw = squeeze(sum(obj.rData(:,:,:,z,slice,reps),5));
+            specs_raw = squeeze(sum(obj.rData(:,:,:,z,reps),5));
             for x = (1:obj.dimX)
                 if isvalid(ax)
                     imagesc(ax,ints');
@@ -1028,7 +1017,11 @@ classdef DataRecon < handle
             end
             if isvalid(ax)
                 imagesc(ax,ints');
-                title(ax,sprintf('Phased integrals on range [%0.2f,%0.2f]',bds(1),bds(2)))
+                if strcmp(bdsType,'ind')
+                    title(ax,sprintf('Phased integrals on range [%0.2f, %0.2f] (ind)',bds(1),bds(2)));
+                else
+                    title(ax,sprintf('Phased integrals on range [%0.2f, %0.2f] (ppm)',obj.xppm(bds(1)),obj.xppm(bds(2))))
+                end
                 drawnow;
             end
             %obj.analysis{end+1} = struct('ints',ints,'bds',bds,'timeStamp',datetime('now'));
@@ -1072,11 +1065,11 @@ classdef DataRecon < handle
                 opts.decayCorr logical = false %correct for polarization decay from measurements
                 opts.stack logical = false;
             end
-            [x,y,z,slice,rep] = obj.getFocus('r');
+            [x,y,z,rep] = obj.getFocus('r');
             if opts.stack
-                specStack = obj.rData(:,x,y,z,slice,:);
+                specStack = obj.rData(:,x,y,z,:);
             else
-                specStack = obj.rData(:,x,y,z,slice,rep);
+                specStack = obj.rData(:,x,y,z,rep);
             end
             switch bdsType
                 case 'ppm'
@@ -1141,8 +1134,8 @@ classdef DataRecon < handle
                 opts.flipAdjust logical = false;
                 opts.decayCorr logical = false;
             end
-            [x,y,z,slice,rep] = obj.getFocus('r');
-            specStack = obj.rData(:,x,y,z,slice,:);
+            [x,y,z,rep] = obj.getFocus('r');
+            specStack = obj.rData(:,x,y,z,:);
             ax = axes(figure);
             switch mode
                 case 'real'
@@ -1412,9 +1405,9 @@ classdef DataRecon < handle
                 reps = 1:obj.nReps;
             end
             angs = zeros(obj.nPoints,reps);
-            [x,y,z,slice,~] = obj.getFocus("r");
+            [x,y,z,~] = obj.getFocus("r");
             for rep = reps
-                angs(:,rep) = rad2deg(unwrap(angle(obj.rData(:,x,y,z,slice,rep))));
+                angs(:,rep) = rad2deg(unwrap(angle(obj.rData(:,x,y,z,rep))));
             end
         end
 
@@ -1551,8 +1544,8 @@ classdef DataRecon < handle
             % Updates all active linked plots, purges invalid linked plots,
             % and automatically formats linked plots by calling setupPlot.
             % This is the function called by the 'showEdits' listener.
-            [kx,ky,kz,~,~] = obj.getFocus("k");
-            [rx,ry,rz,slice,rep] = obj.getFocus("r");
+            [kx,ky,kz,~] = obj.getFocus("k");
+            [rx,ry,rz,rep] = obj.getFocus("r");
 
             rInd = obj.focus.rInd;
             kInd = obj.focus.kInd;
@@ -1568,30 +1561,30 @@ classdef DataRecon < handle
                 plotParams = linkedPlot.params;
                 switch plotParams.type
                     case 'kPlot'
-                        mrPlot("line",obj.kData(:,kx,ky,kz,slice,rep),ax,"mode",plotParams.mode);
+                        mrPlot("line",obj.kData(:,kx,ky,kz,rep),ax,"mode",plotParams.mode);
                     case 'rPlot'
                         if strcmp(plotParams.xAx,'ppm')
-                            mrPlot("line",obj.rData(:,rx,ry,rz,slice,rep),ax,{obj.xppm},...
+                            mrPlot("line",obj.rData(:,rx,ry,rz,rep),ax,{obj.xppm},...
                                            "mode",plotParams.mode);
                         else
-                            mrPlot("line",obj.rData(:,rx,ry,rz,slice,rep),ax,"mode",plotParams.mode);
+                            mrPlot("line",obj.rData(:,rx,ry,rz,rep),ax,"mode",plotParams.mode);
                         end
                     case 'spiral'
                         if strcmp(plotParams.xAx,'ppm')
-                            mrPlot("spiral",obj.rData(:,rx,ry,rz,slice,rep),ax,{obj.xppm},...
+                            mrPlot("spiral",obj.rData(:,rx,ry,rz,rep),ax,{obj.xppm},...
                                            "mode",plotParams.mode);
                         else
-                            mrPlot("spiral",obj.rData(:,rx,ry,rz,slice,rep),ax,"mode",plotParams.mode);
+                            mrPlot("spiral",obj.rData(:,rx,ry,rz,rep),ax,"mode",plotParams.mode);
                         end
                     case 'kImage'
-                        mrPlot("image",obj.kData(kInd,:,:,kz,slice,rep),ax,"mode",plotParams.mode);
+                        mrPlot("image",obj.kData(kInd,:,:,kz,rep),ax,"mode",plotParams.mode);
                     case 'rImage'
-                        mrPlot("image",obj.rData(rInd,:,:,rz,slice,rep),ax,"mode",plotParams.mode);
+                        mrPlot("image",obj.rData(rInd,:,:,rz,rep),ax,"mode",plotParams.mode);
                     case 'rStack'
                         if strcmp(plotParams.xAx,'ppm')
-                            mrPlot("line_stack",obj.rData(:,rx,ry,rz,slice,:),ax,{obj.xppm,1:obj.nReps},"mode",plotParams.mode);
+                            mrPlot("line_stack",obj.rData(:,rx,ry,rz,:),ax,{obj.xppm,1:obj.nReps},"mode",plotParams.mode);
                         else
-                            mrPlot("line_stack",obj.rData(:,rx,ry,rz,slice,:),ax,"mode",plotParams.mode);
+                            mrPlot("line_stack",obj.rData(:,rx,ry,rz,:),ax,"mode",plotParams.mode);
                         end
                     otherwise
                         error('Invalid Linked Plot Type');
@@ -1677,9 +1670,9 @@ classdef DataRecon < handle
 
             ax = axes(figure);
             kInd = obj.focus.kInd;
-            [~,~,kz,slice,rep] = obj.getFocus("k");
+            [~,~,kz,rep] = obj.getFocus("k");
             imagesc(ax,squeeze(abs(obj.kData( ...
-                                        kInd,:,:,kz,slice,rep)))');
+                                        kInd,:,:,kz,rep)))');
             title(ax,'PLEASE SELECT K-VOXEL');
             obj.plotFocus(ax,"kImage");
             try
@@ -1698,10 +1691,10 @@ classdef DataRecon < handle
             % voxel which will then become the focused r_vox
 
             ax = axes(figure);
-            [~,~,rz,slice,rep] = obj.getFocus("r");
+            [~,~,rz,rep] = obj.getFocus("r");
             rInd = obj.focus.rInd;
             imagesc(ax,squeeze(abs(obj.rData( ...
-                                        rInd,:,:,rz,slice,rep)))');
+                                        rInd,:,:,rz,rep)))');
             title(ax,'PLEASE SELECT R-VOXEL');
             obj.plotFocus(ax,"rImage");
             try
@@ -1759,7 +1752,7 @@ classdef DataRecon < handle
             end
         end
    
-        function M = visualizeDecay(obj,opts)
+        function visualizeDecay(obj,opts)
             % Method intended to help the user visualize how a spectrum (or
             % specific regions of a spectrum) decay over time. The
             % spectrum is specified by obj.focus. VisualizeDecay will 
@@ -1778,20 +1771,26 @@ classdef DataRecon < handle
                 opts.mode {mustBeMember(opts.mode,{'real','abs','imag'})} = 'real';
                 opts.pickRegion logical = false;
                 opts.dt = 0.5;
+                opts.reps = [];
             end
             ax = axes(figure);
-            [x,y,z,slice,rep] = obj.getFocus("r");
+            [x,y,z,rep] = obj.getFocus("r");
             [xmin,xmax] = bounds(obj.xppm);
-            ymins = zeros(size(obj.nReps));
-            ymaxs = zeros(size(obj.nReps));
-            for idx = 1:obj.nReps
+            if isempty(opts.reps)
+                reps = 1:obj.nReps;
+            else
+                reps = opts.reps;
+            end
+            ymins = zeros(size(reps));
+            ymaxs = zeros(size(reps));
+            for idx = reps
                 switch opts.mode
                     case 'real'
-                        [ymin_local,ymax_local] = bounds(real(obj.rData(:,x,y,z,slice,idx)));
+                        [ymin_local,ymax_local] = bounds(real(obj.rData(:,x,y,z,idx)));
                     case 'abs'
-                        [ymin_local,ymax_local] = bounds(abs(obj.rData(:,x,y,z,slice,idx)));
+                        [ymin_local,ymax_local] = bounds(abs(obj.rData(:,x,y,z,idx)));
                     case 'imag'
-                        [ymin_local,ymax_local] = bounds(imag(obj.rData(:,x,y,z,slice,idx)));
+                        [ymin_local,ymax_local] = bounds(imag(obj.rData(:,x,y,z,idx)));
                 end
                 ymins(idx) = ymin_local;
                 ymaxs(idx) = ymax_local;
@@ -1801,11 +1800,11 @@ classdef DataRecon < handle
             if opts.pickRegion
                 switch opts.mode
                     case 'real'
-                        plot(ax,obj.xppm,real(obj.rData(:,x,y,z,slice,rep)));
+                        plot(ax,obj.xppm,real(obj.rData(:,x,y,z,rep)));
                     case 'imag'
-                        plot(ax,obj.xppm,imag(obj.rData(:,x,y,z,slice,rep)));
+                        plot(ax,obj.xppm,imag(obj.rData(:,x,y,z,rep)));
                     case 'abs'
-                        plot(ax,obj.xppm,abs(obj.rData(:,x,y,z,slice,rep)));
+                        plot(ax,obj.xppm,abs(obj.rData(:,x,y,z,rep)));
                 end
                 obj.setupPlot(ax,"type","rPlot","mode",opts.mode,"xAx","ppm");
                 drawnow;
@@ -1813,16 +1812,15 @@ classdef DataRecon < handle
                 [xmin,xmax] = bounds(region.Vertices(:,1));
                 [ymin,ymax] = bounds(region.Vertices(:,2));
             end
-            M(obj.nReps) = struct('cdata',[],'colormap',[]);
-            for rep = (1:obj.nReps)
+            for rep = reps
                 try
                     switch opts.mode
                         case 'real'
-                            plot(ax,obj.xppm,real(obj.rData(:,x,y,z,slice,rep)));
+                            plot(ax,obj.xppm,real(obj.rData(:,x,y,z,rep)));
                         case 'imag'
-                            plot(ax,obj.xppm,imag(obj.rData(:,x,y,z,slice,rep)));
+                            plot(ax,obj.xppm,imag(obj.rData(:,x,y,z,rep)));
                         case 'abs'
-                            plot(ax,obj.xppm,abs(obj.rData(:,x,y,z,slice,rep)));
+                            plot(ax,obj.xppm,abs(obj.rData(:,x,y,z,rep)));
                     end  
                     obj.setupPlot(ax,"type","rPlot","mode","real","xAx","ppm");
                     subtitle(ax,sprintf('Rep %d',rep));
@@ -1831,7 +1829,7 @@ classdef DataRecon < handle
                     drawnow;
                     pause(opts.dt);
                 catch
-                    %assume: ax no longer valid
+                    %assume cause: ax no longer valid
                     continue
                 end
             end

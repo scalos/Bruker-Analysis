@@ -521,7 +521,12 @@ classdef ImageRecon<handle
                     layerData = obj.globalTforms(layerData);
                     layerData = circshift(layerData,layer.shift);
                     if ~isempty(layer.mask)
-                        layerData = mask(layerData,layer.mask);
+                        if ~layer.tPose
+                            layerMask = layer.mask';
+                        else
+                            layerMask = layer.mask;
+                        end
+                        layerData = mask(layerData,layerMask);
                     end
                     [dataMin,dataMax] = bounds(layerData,'all');
                     dataRange = dataMax-dataMin;

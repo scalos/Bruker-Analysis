@@ -104,7 +104,7 @@ classdef BrukerExpmt < handle
             %%%%%%%%%%%% LOAD SPATIAL PARAMETERS %%%%%%%%%%%%%%%%%%
 
             try
-                spatialDims = length(obj.Reco{1}.RECO_size)-1;
+                nSpatialDims = length(obj.Reco{1}.RECO_size)-1;
                 obj.spatialSizes = ones(1,3);
                 if obj.isEPSI
                     % In EPSI, the spectral dimension is in between the first two spatial
@@ -112,19 +112,19 @@ classdef BrukerExpmt < handle
                     obj.spatialSizes(1) = obj.Reco{1}.RECO_size(1);
                     obj.nPoints = obj.Reco{1}.RECO_size(2);
                     obj.spatialSizes(2) = obj.Reco{1}.RECO_size(3);
-                    if 3 == spatialDims
+                    if 3 == nSpatialDims
                         obj.spatialSizes(3) = obj.Reco{1}.RECO_size(4);
                     end
                 else
                     obj.nPoints = obj.Reco{1}.RECO_size(1);
-                    for dim = 1:spatialDims
+                    for dim = 1:nSpatialDims
                         obj.spatialSizes(dim) = obj.Reco{1}.RECO_size(dim+1);
                     end
                 end
     
-                % if 2 == spatialDims
-                %     obj.spatialSizes(3) = obj.Reco{1}.RecoObjectsPerRepetition;
-                % end
+                if 2 == nSpatialDims
+                    obj.spatialSizes(3) = obj.Reco{1}.RecoObjectsPerRepetition;
+                end
                 
             catch ME
                 warning('Error loading spatial-spectral dimensions\n%s',getReport(ME));
@@ -161,7 +161,7 @@ classdef BrukerExpmt < handle
             end
 
             obj.sysParams.dataShape = [obj.nPoints,obj.spatialSizes(1), ...
-                                    obj.spatialSizes(2),obj.spatialSizes(3),obj.nSlices,obj.nReps];
+                                    obj.spatialSizes(2),obj.spatialSizes(3),obj.nReps];
             
             %%%%%%%%%%%%%%%%%%%%%%%% LOAD PROCESSED DATA %%%%%%%%%%%%%%%%%
             obj.loadFidProc;
@@ -188,12 +188,12 @@ classdef BrukerExpmt < handle
                             if obj.isEPSI
                                 procDataRaw = reshape(procDataRaw,...
                                 [obj.spatialSizes(1),obj.nPoints ...
-                                obj.spatialSizes(2),obj.spatialSizes(3),obj.nSlices,obj.nReps]);
+                                obj.spatialSizes(2),obj.spatialSizes(3),obj.nReps]);
                                 procDataRaw = permute(procDataRaw,[2,1,3,4,5,6]);
                             else
                                 procDataRaw = reshape(procDataRaw,...
                                     [obj.nPoints,obj.spatialSizes(1), ...
-                                    obj.spatialSizes(2),obj.spatialSizes(3),obj.nSlices,obj.nReps]);
+                                    obj.spatialSizes(2),obj.spatialSizes(3),obj.nReps]);
                             end
                             
                             % K-Space reconstruction:
@@ -258,12 +258,12 @@ classdef BrukerExpmt < handle
                                 if obj.isEPSI
                                     seqDataRaw = reshape(seqDataRaw,...
                                     [obj.spatialSizes(1),obj.nPoints ...
-                                    obj.spatialSizes(2),obj.spatialSizes(3),obj.nSlices,obj.nReps]);
+                                    obj.spatialSizes(2),obj.spatialSizes(3),obj.nReps]);
                                     seqDataRaw = permute(seqDataRaw,[2,1,3,4,5,6]);
                                 else
                                     seqDataRaw = reshape(seqDataRaw,...
                                         [obj.nPoints,obj.spatialSizes(1), ...
-                                        obj.spatialSizes(2),obj.spatialSizes(3),obj.nSlices,obj.nReps]);
+                                        obj.spatialSizes(2),obj.spatialSizes(3),obj.nReps]);
                                 end
                             end
                             %Weird that we need this but...
