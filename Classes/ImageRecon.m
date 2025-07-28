@@ -456,13 +456,14 @@ classdef ImageRecon<handle
             ax = axes(figure);
             cmap = obj.layers{layerInd}.cmap;
             adjustCmap(cmap,opts.nControlPts,[],"dispAx",ax);
-            input('Press any key to confirm')
+            input('Press any enter to confirm')
             drawnow;
             if isvalid(ax)
                 newCmap = get(ax,'Colormap');
                 obj.layers{layerInd}.cmap = newCmap;
+                close(ax.Parent);
             end
-            close(ax.Parent);
+            
         end
 
         function spreadParams(obj,refInd,spreadInds,fields)
@@ -568,7 +569,7 @@ classdef ImageRecon<handle
                     layerData(layerData>=layer.clim(2)) = layer.clim(2);
 
                     layerData = mat2gray(layerData)*height(layer.cmap);
-                    layerTC = ind2rgb(uint8(layerData),layer.cmap);
+                    layerTC = ind2rgb(round(layerData),layer.cmap);
                     if opts.autoThresh
                         thresh = layer.clim;
                     else
