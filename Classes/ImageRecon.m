@@ -438,6 +438,33 @@ classdef ImageRecon<handle
             tbl = listStructFields({obj.layers{inds}},fields);
         end
 
+        function adjustCmap(obj,layerInd,opts)
+            arguments
+                obj
+                layerInd
+                opts.nControlPts = 2;
+                opts.reset = false;
+            end
+            if opts.reset
+                switch obj.layers{layerInd}.style
+                    case 'struc'
+                        obj.layers{layerInd}.cmap = gray(256);
+                    case 'func'
+                        obj.layers{layerInd}.cmap = jet(256);
+                end
+            end
+            ax = axes(figure);
+            cmap = obj.layers{layerInd}.cmap;
+            adjustCmap(cmap,opts.nControlPts,[],"dispAx",ax);
+            input('Press any key to confirm')
+            drawnow;
+            if isvalid(ax)
+                newCmap = get(ax,'Colormap');
+                obj.layers{layerInd}.cmap = newCmap;
+            end
+            close(ax.Parent);
+        end
+
         function spreadParams(obj,refInd,spreadInds,fields)
             refLayer = obj.layers{refInd};
             spreadLayers = {obj.layers{spreadInds}}; %#ok<CCAT1>
