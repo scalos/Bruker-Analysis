@@ -790,7 +790,7 @@ classdef DataRecon < handle
                 ax = axes(figure);
                 psSpec = ps(specData,phi0,pivotInd,phi1);
                 mrPlot("spiral",psSpec,ax,{obj.xppm});
-                ppmStep = round((max(obj.xppm)-min(obj.xppm))/(20*5))*5;
+                ppmStep = max(round((max(obj.xppm)-min(obj.xppm))/(20*5))*5,5);
                 obj.setupPlot(ax,"type",'spiral','ppmStep',ppmStep,'xAx','ppm');
                 view(ax,0,90);
                 axis(ax,'padded');
@@ -991,11 +991,42 @@ classdef DataRecon < handle
                     end
                     
                     data = specs_raw(bds(1):bds(2),x,y);
-                    [~,locs,w,~] = findpeaks(abs(data),SortStr='descend');
+                    %corse phase rotation to get peak
+                    startPhase = 0;
+                    maxVal = 0;
+                    for p = 0:10:360
+                        data_p = real(ps(data,p));
+                        %flatten:
+                        slope = (data_p(end)-data_p(1))/(numel(data_p)-1);
+                        data_flat = data_p(:)' - (slope*(1:numel(data_p))+data_p(1));
+                        maxData = max(data_flat);
+                        if maxData>maxVal
+                            startPhase = p;
+                            maxVal = maxData;
+                        end
+                    end
+                    [~,locs,w,~] = findpeaks(real(ps(data,startPhase)),SortStr='descend');
+                    
+                    
                     if ~isempty(locs)
+                        
                         p0Guess = -rad2deg(unwrap(angle(data(locs(1)))));
-                        options = optimset('Display','none');
-                        p0 = fminsearch(@(p0)symScore(real(ps(data,p0)),locs(1),w(1)),p0Guess,options);
+                        options = optimset('MaxFunEvals',500*numel(data), ...
+                                           'MaxIter',500*numel(data),...
+                                           'TolFun',1e-5,...
+                                           'TolX',1e-5);
+                        [p0,~,exitType] = fminsearch(@(p0)symScore(real(ps(data,p0)),locs(1),100*w(1)),p0Guess,options);
+                        if exitType~=1
+                            % options = optimset('MaxFunEvals',500*numel(data), ...
+                            %                    'MaxIter',500*numel(data),...
+                            %                'TolFun',tol,...
+                            %                'TolX',tol,...
+                            %                'PlotFcns',@optimplotfval);
+                            % fminsearch(@(p0)symScore(real(ps(data,p0)),locs(1),w(1)),p0Guess,options);
+                            %p0Guess;
+                            plot(ax,abs(data));
+                            pause(0.5);
+                        end
                         zeroPhases(x,y) = p0;
                         psData = real(ps(data,p0));                                
                         base = arpls(psData);

@@ -301,33 +301,39 @@ classdef ImageRecon<handle
             else
                 parent = opts.parent;
             end
-            ax = obj.dispAx;
+            currAx = obj.dispAx;
             visLayers = obj.whosVis;
             tileAxes = cell(m*n,1);
             axPositions = ones(m*n,4);
             panels = cell(m*n,1);
             
-            for idx = 1:numel(inds)
-                obj.setVis(inds(idx));
-                if opts.allCbars
-                    obj.prefs.colorbar.targInd = inds(idx);
-                end
+            for idx = 1:(m*n)
+                
                 panel = uipanel('Position',getGridPos(m,n,idx,opts.spacing), ...
                     'BorderType', 'none','Parent',parent,"BackgroundColor",'white');
                 col = mod(idx - 1, n) + 1;
                 panel.Position(1) = panel.Position(1)-opts.panel_hSqueeze*(col-1);
-                obj.dispAx = axes('Parent',panel);
-                obj.show("autoCB",opts.autoCB,"autoThresh",opts.autoThresh);
-                if ~isempty(opts.zoom)
-                    axis(obj.dispAx,opts.zoom);
-                end
-                if opts.showNames
-                    if inds(idx)> 0
-                        title(obj.dispAx,obj.layers{inds(idx)}.name)
+                ax = axes('Parent',panel,'Visible','off');
+                if idx<=numel(inds)
+                    ax = axes('Parent',panel);
+                    obj.setVis(inds(idx));
+                    if opts.allCbars
+                        obj.prefs.colorbar.targInd = inds(idx);
+                    end
+                    set(ax,'Visible','on');
+                    obj.dispAx = ax;
+                    obj.show("autoCB",opts.autoCB,"autoThresh",opts.autoThresh);
+                    if ~isempty(opts.zoom)
+                        axis(obj.dispAx,opts.zoom);
+                    end
+                    if opts.showNames
+                        if inds(idx)> 0
+                            title(obj.dispAx,obj.layers{inds(idx)}.name)
+                        end
                     end
                 end
-                tileAxes{idx} = obj.dispAx;
-                axPositions(idx,:) = obj.dispAx.Position;
+                tileAxes{idx} = ax;
+                axPositions(idx,:) = ax.Position;
                 panels{idx} = panel;
             end
             if opts.match_dispAx_sizes
@@ -342,7 +348,7 @@ classdef ImageRecon<handle
             end
             obj.prefs = old_prefs;
             obj.setVis(visLayers);
-            obj.dispAx = ax;
+            obj.dispAx = currAx;
         end
         
         function blinkLayer(obj,layerInd,opts)
@@ -554,6 +560,7 @@ classdef ImageRecon<handle
                         else
                             layerMask = layer.mask;
                         end
+                        layerMask = obj.globalTforms(layerMask);
                         layerData = mask(layerData,layerMask);
                     end
                     [dataMin,dataMax] = bounds(layerData,'all');

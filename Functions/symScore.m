@@ -16,5 +16,9 @@ function score = symScore(data,pkInd,pkWidth)
     leftSide = leftSide(end-minSize(1)+1:end);
     leftFlipped = flip(leftSide);
     wholeInt = abs(trapz(leftFlipped))+abs(trapz(rightSide));
+    if wholeInt == 0
+        score = 1;
+        return
+    end
     score = abs(trapz(leftFlipped-rightSide))/wholeInt;
 end
