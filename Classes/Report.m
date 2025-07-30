@@ -5,11 +5,44 @@ classdef Report < handle
         delEntries;
         exportParams;
         reportDir;
+        recordDir;
         recording = true;
+        charMax = 1000;
     end
-    % Add new report parameter: 'mat', pass to it strings corresponding to
-    % workspace variables which will then be saved and placed into a
-    % dedicated folder for .mat files
+    properties (Access=private)
+        recordDirName = 'Records';
+        reportFileName = 'Report.txt';
+        logFileName = 'reco_logs.txt';
+    end
+        
+
+    methods (Access=private)
+        function fVar = formatVar(~,var)
+            fVar = formattedDisplayText(var,"SuppressMarkup",true,"UseTrueFalseForLogical",true);
+        end
+        function vName = validFilename(~,path)
+            working = true;
+            vName = path;
+            copyNum = 1;
+            [parentPath,name,ext] = fileparts(path);
+            while working
+                if isfile(vName)
+                    nChar = char(name);
+                    if numel(char(name))<3
+                        name = sprintf("%s(%d)",name,copyNum);
+                    elseif strcmp(nChar(end-2:end),sprintf('(%d)',copyNum))
+                        copyNum = copyNum+1;
+                        name = sprintf("%s(%d)",nChar(1:end-3),copyNum);
+                    else
+                        name = sprintf("%s(%d)",name,copyNum);
+                    end
+                    vName = fullfile(parentPath,sprintf('%s%s',name,ext));
+                else
+                    working = false;
+                end
+            end
+        end
+    end
 
     % Prevent commandRecord and saveCode from overwriting
     %   - commandRecord should append
@@ -22,7 +55,7 @@ classdef Report < handle
                 parentDir = NaN;
                 opts.name = [];
                 opts.commandRecord = true;
-                opts.saveCode = true;
+                opts.saveCode = [];
             end
             if isnan(parentDir)
                 parentDir = uigetdir;
@@ -35,30 +68,69 @@ classdef Report < handle
             formats = {'fig','png'};
             obj.exportParams.DPI = 300;
             obj.exportParams.figSaveFormats = formats;
-            
-            reportFile = fullfile(parentDir, 'Report.txt');
+            timeStamp = datetime('now','Format','MMddyyHHmm');
 
-            % Check if the file exists
-            if exist(reportFile, 'file') == 2
+            % Check if parentDir is valid recon dir:
+            %   requires: 
+            %       1) record dir with name obj.recordDirName
+            %       2) file with name obj.logFileName in obj.recordDir
+            newSession = true;
+            if isfolder(fullfile(parentDir,obj.recordDirName))
+                if isfile(fullfile(parentDir,obj.recordDirName,obj.logFileName))
+                    newSession = false;
+                end
+            end
+
+            if ~newSession
+                %set report path to parentDir
                 obj.reportDir = parentDir;
+                obj.recordDir = fullfile(parentDir,obj.recordDirName);
             else
                 if isempty(opts.name)
-                    % Create a timestamped directory
-                    timeStamp = datestr(now, 'mmddyyHHMM');
+                    % Default name:
                     dirName = sprintf('%s_ReconReport', timeStamp);
                 else
                     dirName = opts.name;
                 end
                 reportDir = fullfile(parentDir, dirName);
+                recordDir = fullfile(reportDir,obj.recordDirName);
                 mkdir(reportDir);
+                mkdir(recordDir);
                 obj.reportDir = reportDir;
+                obj.recordDir = recordDir;
             end
             if opts.commandRecord
-                diary(fullfile(obj.reportDir,'commandLineRecord'));
+                recordName = sprintf('%s_commandlineRecord',timeStamp);
+                diary(fullfile(obj.recordDir,recordName));
+            end
+            if isempty(opts.saveCode)
+                if newSession
+                    opts.saveCode = true;
+                else
+                    opts.saveCode = false;
+                end
             end
             if opts.saveCode
                 classEnvDir = fileparts(fileparts(mfilename("fullpath")));
-                zip(fullfile(obj.reportDir,'Source_Code'),classEnvDir);
+                saveName = sprintf('%s_source_code',timeStamp);
+                zip(fullfile(obj.recordDir,saveName),classEnvDir);
+            end
+            obj.updateIDFile;
+            obj.update;
+        end
+
+        function updateIDFile(obj)
+            path = fullfile(obj.recordDir,obj.logFileName);
+            firstSession = true;
+            if isfile(path)
+                firstSession = false;
+            end
+            id = fopen(path,'a+');
+            timeStamp = datetime('now','Format','dd-MMM-uuuu HH:mm:ss');
+            if firstSession
+                fprintf(id,'Recon started: %s',timeStamp);
+            else
+                fprintf(id,'\nRecon resumed: %s',timeStamp);
             end
         end
         
@@ -76,10 +148,12 @@ classdef Report < handle
         
         function update(obj)
             % Open the main report text file
-            reportFile = fullfile(obj.reportDir, 'Report.txt');
+            reportFile = fullfile(obj.reportDir, obj.reportFileName);
+            %open with a+ => append to file
             fileID = fopen(reportFile, 'a+');
             
             % Loop through each entry in obj.entries
+            toPrint = [];
             for idx = 1:numel(obj.entries)
                 entry = obj.entries{idx};
                 if entry.written
@@ -88,122 +162,104 @@ classdef Report < handle
                     obj.entries{idx}.written = true;
                 end
 
-                % % Header for each entry
-                % fprintf(fileID, "===== Entry %d =====\n", idx);
-
-                % Write file information
-                if isfield(entry, 'fileName') && isfield(entry, 'filePath')
-                    fprintf(fileID, "===== File Information =====\n");
-                    % relativeFilePath = fullfile(entry.fileName);
-                    % [~, relativeFilePath] = fileparts(relativeFilePath); % Remove parent directories
-                    fprintf(fileID, "File Name  : %s\n", entry.fileName);
-                    % fprintf(fileID, "File Path  : %s\n\n", relativeFilePath);
-
-                    % Copy the associated file to the new directory
-                    sourceFile = fullfile(entry.filePath, entry.fileName);
-                    destFile = fullfile(obj.reportDir, entry.fileName);
-                    copyfile(sourceFile, destFile);
-                end
                 if isfield(entry,'figs')
-                    fprintf(fileID, "===== Figures =====\n");
-                    figs = entry.figs;
+                    toPrint = [toPrint,char("===== Figures =====\n")];%#ok agrow
+                    figEntries = entry.figs;
                     if isfield(obj.exportParams,'figSaveFormats')
                         saveFormats = obj.exportParams.figSaveFormats;
                     else
                         saveFormats = {'fig','png'};
                     end
-                    if iscell(figs)
-                        for n = 1:2:numel(figs)
-                            name = figs{n};
-                            fig = figs{n+1};
-                            for i = 1:numel(saveFormats)
-                                format = ['.',saveFormats{i}];
-                                path = fullfile(obj.reportDir,[name,format]);
-                                if strcmp(format,'.fig')
-                                    savefig(fig,path);
-                                else
-                                    exportgraphics(fig,path, ...
-                                        'Resolution',obj.exportParams.DPI);
-                                end
+                    for n = 1:2:numel(figEntries)
+                        name = figEntries{n};
+                        fig = figEntries{n+1};
+                        for i = 1:numel(saveFormats)
+                            format = ['.',saveFormats{i}];
+                            path = obj.validFilename(fullfile(obj.reportDir,[name,format]));
+                            if strcmp(format,'.fig')
+                                savefig(fig,path);
+                            else
+                                exportgraphics(fig,path, ...
+                                    'Resolution',obj.exportParams.DPI);
                             end
-                            fprintf(fileID,'%s%s\n',name,format);
+                            [~,vName] = fileparts(path);
+                            toPrint = [toPrint,char(sprintf('%s%s\n',vName,format))]; %#ok agrow;
                         end
+                        toPrint = [toPrint,'\n'];
                     end
-                end
-
-                % Write system parameters
-                if isfield(entry, 'sysParams')
-                    fprintf(fileID, "===== System Parameters =====\n");
-                    sysFields = fieldnames(entry.sysParams);
-                    maxSysFieldLength = max(cellfun(@length, sysFields));
-                    for i = 1:numel(sysFields)
-                        field = sysFields{i};
-                        value = entry.sysParams.(field);
-                        fprintf(fileID, "%*s : %s\n", maxSysFieldLength, field, num2str(value));
-                    end
-                    fprintf(fileID, "\n");
-                end
-
-                % Write processing parameters
-                if isfield(entry, 'procParams')
-                    fprintf(fileID, "===== Processing Parameters =====\n");
-                    procFields = fieldnames(entry.procParams);
-                    maxProcFieldLength = max(cellfun(@length, procFields));
-                    for i = 1:numel(procFields)
-                        field = procFields{i};
-                        value = entry.procParams.(field);
-
-                        % Check if value is a large array
-                        if isnumeric(value) && numel(value) > 10
-                            % Save to a separate .txt file
-                            paramFileName = sprintf('proc(%d)_%s.txt',idx, field);
-                            paramFilePath = fullfile(obj.reportDir, paramFileName);
-                            writematrix(value, paramFilePath, 'Delimiter', ',');
-
-                            % Reference the external file in Report.txt
-                            fprintf(fileID, "%*s : Saved in %s\n", maxProcFieldLength, field, paramFileName);
-                        else
-                            % Regular parameter, write normally
-                            fprintf(fileID, "%*s : %s\n", maxProcFieldLength, field, num2str(value));
-                        end
-                    end
-                    fprintf(fileID, "\n");
                 end
                
                 % Write notes
                 if isfield(entry, 'notes')
-                    fprintf(fileID, "===== Notes =====\n");
+                    toPrint = [toPrint,char("===== Notes =====\n")];%#ok agrow
                     notes = entry.notes;
-                    
-                    if ischar(notes) || isstring(notes) % Single note (string)
-                        fprintf(fileID, "%s\n", formattedDisplayText(notes));
-                    elseif iscell(notes) % Array of notes
+                    if ~iscell(notes) % Single note (string)
+                        toPrint = [toPrint,char(sprintf("%s\n", obj.formatVar(notes)))];%#ok agrow
+                    else % Array of notes
                         for n = 1:2:numel(notes)
                             label = notes{n};
                             note = notes{n + 1};
-                            fprintf(fileID, "%s:\n%s\n", label, formattedDisplayText(note));
+                            if numel(char(obj.formatVar(note)))>obj.charMax
+                                fileName = sprintf('%s.txt',label);
+                                filePath = fullfile(obj.reportDir, fileName);
+                                vPath = obj.validFilename(filePath);
+                                [~,vName,ext] = fileparts(vPath);
+                                vFileName = sprintf('%s%s',vName,ext);
+                                if isnumeric(note)
+                                    % Save to a separate .txt file as CSV
+                                    writematrix(note, vPath, 'Delimiter', ',');
+                                else
+                                    id = fopen(vPath,'w');
+                                    fprintf(id,obj.formatVar(note));
+                                end
+                                % Reference the external file in Report.txt
+                                toPrint = [toPrint,char(sprintf("%s:\n\tSaved in: %s\n", label, vFileName))]; %#ok agrow
+                            else
+                                toPrint = [toPrint,char(sprintf("%s:\n\t%s\n", label, obj.formatVar(note)))]; %#ok agrow
+                            end
                         end
                     end
                 end
-                fprintf(fileID, "\n=======================================\n\n");
+                toPrint = [toPrint,char("\n=======================================\n\n")];%#ok agrow
             end
-            
+            if ~isempty(toPrint)
+                fprintf(fileID,toPrint);
+            end
             % Close the text file
             fclose(fileID);
         end
 
-        function obj = add(obj,entry)
+        function add(obj,entry)
             arguments
                 obj 
                 entry.notes;
-                entry.sysParams;
-                entry.procParams;
                 entry.figs;
+            end
+
+            %validation:
+            if isfield(entry,'figs')
+                figs = entry.figs;
+                if ~iscell(figs)
+                    error('ERROR: fig entries must be a cell of form {''fileName'',''figHandle''}');
+                elseif mod(numel(figs),2)==1
+                    error('ERROR: fig entries must be pairs of {''fileName'',''figHandle''}');
+                end
+            end
+
+            if isfield(entry,'notes')
+                notes = entry.notes;
+                if ~iscell(notes)
+                    if numel(char(obj.formatVar(notes)))>obj.charMax
+                        error(['ERROR: notes longer than obj.charMax (%d)' ...
+                            ' must be passed as name-value pairs\n e.g. {''name'',''value''}'],obj.charMax);
+                    end
+                elseif mod(numel(notes),2)==1
+                    error('ERROR: name-val note entries must be pairs of {''noteTitle'',''noteContents''}');
+                end
             end
             
             if ~isempty(fieldnames(entry))
                 entry.written = false;
-
                 entry.ID = obj.runningID+1;
                 obj.runningID = obj.runningID+1;
                 obj.entries{end+1} = entry;
