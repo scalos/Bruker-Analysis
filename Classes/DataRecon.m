@@ -652,15 +652,10 @@ classdef DataRecon < handle
                                 disp('Itermax must be Integer!')
                             end
                         case 'z'
-                            if isinteger(int8(itermax-step))
+                            if isinteger(int8(itermax-step))&&itermax-step>0
                                 itermax = itermax-step;
                             else
-                                disp('Itermax must be Integer!')
-                            end
-                            if itermax-step>0
-                                itermax = itermax-step;
-                            else
-                                disp('Itermax must be Positive!')
+                                disp('Itermax must be a positve Integer!')
                             end
                         case 'i'
                             step = step*10;
@@ -1015,18 +1010,8 @@ classdef DataRecon < handle
                                            'MaxIter',500*numel(data),...
                                            'TolFun',1e-5,...
                                            'TolX',1e-5);
-                        [p0,~,exitType] = fminsearch(@(p0)symScore(real(ps(data,p0)),locs(1),100*w(1)),p0Guess,options);
-                        if exitType~=1
-                            % options = optimset('MaxFunEvals',500*numel(data), ...
-                            %                    'MaxIter',500*numel(data),...
-                            %                'TolFun',tol,...
-                            %                'TolX',tol,...
-                            %                'PlotFcns',@optimplotfval);
-                            % fminsearch(@(p0)symScore(real(ps(data,p0)),locs(1),w(1)),p0Guess,options);
-                            %p0Guess;
-                            plot(ax,abs(data));
-                            pause(0.5);
-                        end
+                        [p0,~,~] = fminsearch(@(p0)symScore(real(ps(data,p0)),locs(1),100*w(1)),p0Guess,options);
+                        
                         zeroPhases(x,y) = p0;
                         psData = real(ps(data,p0));                                
                         base = arpls(psData);

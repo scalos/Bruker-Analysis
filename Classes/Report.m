@@ -185,7 +185,7 @@ classdef Report < handle
                             [~,vName] = fileparts(path);
                             toPrint = [toPrint,char(sprintf('%s%s\n',vName,format))]; %#ok agrow;
                         end
-                        toPrint = [toPrint,'\n'];
+                        toPrint = [toPrint,'\n']; %#ok agrow;
                     end
                 end
                

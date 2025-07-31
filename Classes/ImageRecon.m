@@ -281,14 +281,12 @@ classdef ImageRecon<handle
                 n {mustBeInteger};
                 inds {mustBeInteger} = [];
                 opts.showNames = true;
-                opts.match_dispAx_sizes = true;
-                opts.allCbars = true;
                 opts.parent = [];
                 opts.zoom = [];
                 opts.spacing {mustBeGreaterThanOrEqual(opts.spacing,0),...
                               mustBeLessThanOrEqual(opts.spacing,1)}= 0;
-                opts.panel_hSqueeze {mustBeGreaterThanOrEqual(opts.panel_hSqueeze,0),...
-                              mustBeLessThanOrEqual(opts.panel_hSqueeze,1)}= 0;
+                opts.hSqueeze {mustBeGreaterThanOrEqual(opts.hSqueeze,0),...
+                              mustBeLessThanOrEqual(opts.hSqueeze,1)}= 0;
                 opts.autoThresh = false;
                 opts.autoCB = true;
             end
@@ -307,22 +305,18 @@ classdef ImageRecon<handle
             axPositions = ones(m*n,4);
             panels = cell(m*n,1);
             
+            
             for idx = 1:(m*n)
                 
-                panel = uipanel('Position',getGridPos(m,n,idx,opts.spacing), ...
-                    'BorderType', 'none','Parent',parent,"BackgroundColor",'white');
+                pos = getGridPos(m,n,idx,opts.spacing);
                 col = mod(idx - 1, n) + 1;
-                panel.Position(1) = panel.Position(1)-opts.panel_hSqueeze*(col-1);
-                ax = axes('Parent',panel,'Visible','off');
+                pos(1) = pos(1)-opts.hSqueeze*(col-1);
+                ax = axes('Parent',parent,'Visible','off');
                 if idx<=numel(inds)
-                    ax = axes('Parent',panel);
                     obj.setVis(inds(idx));
-                    if opts.allCbars
-                        obj.prefs.colorbar.targInd = inds(idx);
-                    end
                     set(ax,'Visible','on');
                     obj.dispAx = ax;
-                    obj.show("autoCB",opts.autoCB,"autoThresh",opts.autoThresh);
+                    obj.show("autoCB",opts.autoCB,"autoThresh",opts.autoThresh,'bounds',pos,'clearFig',false);
                     if ~isempty(opts.zoom)
                         axis(obj.dispAx,opts.zoom);
                     end
@@ -334,17 +328,6 @@ classdef ImageRecon<handle
                 end
                 tileAxes{idx} = ax;
                 axPositions(idx,:) = ax.Position;
-                panels{idx} = panel;
-            end
-            if opts.match_dispAx_sizes
-                for idx = 1:numel(tileAxes)
-                    if ~isempty(tileAxes{idx})
-                        tileAxes{idx}.Position(1) = min(axPositions(:,1));
-                        tileAxes{idx}.Position(2) = min(axPositions(:,2));
-                        tileAxes{idx}.Position(3) = min(axPositions(:,3));
-                        tileAxes{idx}.Position(4) = min(axPositions(:,4));
-                    end
-                end
             end
             obj.prefs = old_prefs;
             obj.setVis(visLayers);
@@ -488,6 +471,7 @@ classdef ImageRecon<handle
                 opts.autoThresh = false
                 opts.autoCB = true;
                 opts.clearFig = true;
+                opts.bounds = [0,0,1,1];
             end
 
             if isempty(obj.dispAx)||~isvalid(obj.dispAx)
@@ -499,13 +483,16 @@ classdef ImageRecon<handle
             end
             cbTargInd = obj.prefs.colorbar.targInd;
             if obj.prefs.colorbar.visible
-                pos = [0,0,1,1];
+                pos = opts.bounds;
                 padLR = obj.prefs.colorbar.padding_LR;
                 padUD = obj.prefs.colorbar.padding_UD;
-                pos(1) = padLR(1);
-                pos(2) = padUD(1);
-                pos(3) = 1-padLR(2)-padLR(1);
-                pos(4) = 1-padUD(2)-padUD(2);
+                %normalize padding:
+                padLR = padLR.*pos(3);
+                padUD = padUD.*pos(4);
+                pos(1) = pos(1)+padLR(1);
+                pos(2) = pos(2)+padUD(1);
+                pos(3) = pos(3)-padLR(2)-padLR(1);
+                pos(4) = pos(4)-padUD(2)-padUD(2);
                 set(ax,'Position',pos);
                 %autoTargInd:
                 if opts.autoCB
@@ -522,7 +509,7 @@ classdef ImageRecon<handle
                     end
                 end
             else
-                set(ax,'Position',[0,0,1,1]);
+                set(ax,'Position',opts.bounds);
             end
             obj.toFront;
 
