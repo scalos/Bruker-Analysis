@@ -740,7 +740,7 @@ classdef DataRecon < handle
             step = 10;
             pivotVal = params.pivotVal;
             if ~isempty([phi0,phi1,pivotVal])
-                obj.revert("All_Phases",{x,y,z,reps});
+                obj.revert("Region_Phases",{x,y,z,reps});
                 specData = obj.rData(:,x,y,z,rep);
                 obj.applyPhase(phi0,pivotVal,params.pivotMode,phi1);
             else
@@ -763,7 +763,7 @@ classdef DataRecon < handle
                     res = input('Warning! Remove existing baseline? (y/esc)','s');
                     switch res
                         case 'y'
-                            obj.revert("All_Baselines",{x,y,z,reps});
+                            obj.revert("Region_Baselines",{x,y,z,reps});
                             proceed = true;
                             deciding = false;
                         case 'esc'
