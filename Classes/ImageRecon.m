@@ -358,11 +358,11 @@ classdef ImageRecon<handle
             end
         end
 
-        function setVis(obj,layerInds,holdBase)
+        function setVis(obj,layerInds,opts)
             arguments
                 obj
                 layerInds
-                holdBase = true
+                opts.holdBase = true
             end
             for idx = 1:numel(obj.layers)
                 if find(layerInds==idx)
@@ -371,7 +371,7 @@ classdef ImageRecon<handle
                     obj.layers{idx}.visible = false;
                 end
             end
-            if holdBase
+            if opts.holdBase
                 obj.layers{obj.baseInd}.visible = true;
             end
         end
@@ -433,24 +433,59 @@ classdef ImageRecon<handle
                 layerInd
                 opts.nControlPts = 2;
                 opts.reset = false;
+                opts.iterative = false;
             end
-            if opts.reset
-                switch obj.layers{layerInd}.style
-                    case 'struc'
-                        obj.layers{layerInd}.cmap = gray(256);
-                    case 'func'
-                        obj.layers{layerInd}.cmap = jet(256);
+            
+            working = true;
+            save = false;
+            ax = axes(figure);
+            initCmap = obj.layers{layerInd}.cmap;
+            while working
+                if opts.reset
+                    switch obj.layers{layerInd}.style
+                        case 'struc'
+                            obj.layers{layerInd}.cmap = gray(256);
+                        case 'func'
+                            obj.layers{layerInd}.cmap = jet(256);
+                    end
+                end
+                
+                cmap = obj.layers{layerInd}.cmap;
+                adjustCmap(cmap,opts.nControlPts,[],"dispAx",ax);
+                if opts.iterative
+                    opts.reset = true;
+                    res = input('Enter/apply/esc: ','s');
+                    switch res
+                        case ''
+                        case 'apply'
+                            working = false;
+                            save = true;
+                        case 'esc'
+                            working = false;
+                            save = false;
+                        otherwise
+                            disp('invalid response');
+                    end
+                else
+                    input('Press any enter to confirm')
+                end
+                drawnow;
+                if isvalid(ax)
+                    newCmap = get(ax,'Colormap');
+                    obj.layers{layerInd}.cmap = newCmap;
+                end
+                if opts.iterative
+                    obj.show
                 end
             end
-            ax = axes(figure);
-            cmap = obj.layers{layerInd}.cmap;
-            adjustCmap(cmap,opts.nControlPts,[],"dispAx",ax);
-            input('Press any enter to confirm')
-            drawnow;
             if isvalid(ax)
-                newCmap = get(ax,'Colormap');
-                obj.layers{layerInd}.cmap = newCmap;
                 close(ax.Parent);
+            end
+            if ~save
+                obj.layers{layerInd}.cmap = initCmap;
+            end
+            if opts.iterative
+                obj.show
             end
             
         end
@@ -462,6 +497,38 @@ classdef ImageRecon<handle
             for idx = 1:numel(spreadInds)
                 ind = spreadInds(idx);
                 obj.layers{ind} = newLayers{idx};
+            end
+        end
+
+        function data = getShowData(obj,layerInds)
+            baseLayer = obj.base;
+            data = cell(numel(layerInds),1);
+            if baseLayer.tPose
+                baseSize = size(squeeze(baseLayer.data(:,:,1)));
+            else
+                baseSize = size(squeeze(baseLayer.data(:,:,1))');
+            end
+            for idx = 1:numel(layerInds)
+                lInd = layerInds(idx);
+                layer = obj.layers{lInd};
+                rep = layer.viewRep;
+                layerData = squeeze(eval(sprintf('%s(layer.data(:,:,%d))',layer.mode,rep)));
+                if ~layer.tPose
+                    layerData = layerData';
+                end
+                layerData = imresize(layerData,baseSize);
+                layerData = obj.globalTforms(layerData);
+                layerData = circshift(layerData,layer.shift);
+                if ~isempty(layer.mask)
+                    if ~layer.tPose
+                        layerMask = layer.mask';
+                    else
+                        layerMask = layer.mask;
+                    end
+                    layerMask = obj.globalTforms(layerMask);
+                    layerData = mask(layerData,layerMask);
+                end
+                data{idx} = layerData;
             end
         end
 
