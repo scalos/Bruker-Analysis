@@ -1018,14 +1018,19 @@ classdef DataRecon < handle
                         psbsData = psData-base;
 
                         [~,locsPB,wPB,~] = findpeaks(psbsData,SortStr="descend");
-                        loc = locsPB(1);
-                        wIntFac = 1;
-                        w = wIntFac*wPB(1);
-                        peakLoc = max(1,floor(loc-w/2)):...
-                                  min(numel(psbsData),ceil(loc+w/2));
-                        int = sum(psbsData(peakLoc));
-                        ints(x,y) = abs(int);
-                        specs(:,x,y) = psbsData;
+                        if ~isempty(locsPB)
+                                        
+                            loc = locsPB(1);
+                            wIntFac = 1;
+                            w = wIntFac*wPB(1);
+                            peakLoc = max(1,floor(loc-w/2)):...
+                                      min(numel(psbsData),ceil(loc+w/2));
+                            int = sum(psbsData(peakLoc));
+                            ints(x,y) = abs(int);
+                            specs(:,x,y) = psbsData;  
+                        else
+                            ints(x,y) = NaN;
+                        end
                     else
                         ints(x,y) = NaN;
                     end
@@ -1338,7 +1343,7 @@ classdef DataRecon < handle
             arguments
                 obj 
                 analysisInd {mustBeGreaterThanOrEqual(analysisInd,1),mustBeInteger}
-                dt;
+                dt = [];
                 opts.showData logical = true;
                 opts.labels = {};
                 opts.calcT1 logical = false;
@@ -1351,7 +1356,7 @@ classdef DataRecon < handle
                     hold(dynAx,"on")
                     
                     
-                    if ~isnan(tStep)
+                    if ~isempty(tStep)
                         xAx = (1:obj.nReps)*tStep;
                     else
                         xAx = (1:obj.nReps);

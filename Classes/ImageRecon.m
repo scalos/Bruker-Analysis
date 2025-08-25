@@ -467,7 +467,9 @@ classdef ImageRecon<handle
                             disp('invalid response');
                     end
                 else
-                    input('Press any enter to confirm')
+                    input('Press enter to confirm')
+                    working = false;
+                    save = true;
                 end
                 drawnow;
                 if isvalid(ax)
