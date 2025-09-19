@@ -1,4 +1,7 @@
 function tbl = listStructFields(structs,fields)
+    if ~iscell(fields)
+        fields = {fields};
+    end
     fieldData = cell(1,numel(fields));
     for sInd = 1:numel(structs)
         s = structs{sInd};

@@ -1321,7 +1321,7 @@ classdef DataRecon < handle
             end
         end
 
-        function dynAx = showAnalysis(obj,analysisInd,dt,opts)
+        function dynAx = showAnalysis(obj,analysisInd,xAx,opts)
             % Display mode for viewing obj.analysis entries. This method is
             % intended to be used to view dynamic curves (or in general the
             % time evolution of peak integrals). Options can be set to
@@ -1343,22 +1343,22 @@ classdef DataRecon < handle
             arguments
                 obj 
                 analysisInd {mustBeGreaterThanOrEqual(analysisInd,1),mustBeInteger}
-                dt = [];
+                xAx = []
                 opts.showData logical = true;
                 opts.labels = {};
                 opts.calcT1 logical = false;
             end
-            tStep = dt;
+            if isempty(xAx)
+                xLbl = 'Frames';
+            else
+                xLbl = 'Time (s)';
+            end
             dynAx = axes(figure);
             if ~isempty(obj.analysis)
                 if analysisInd<= length(obj.analysis)
                     ints = obj.analysis{analysisInd}.ints.Integrals;
                     hold(dynAx,"on")
-                    
-                    
-                    if ~isempty(tStep)
-                        xAx = (1:obj.nReps)*tStep;
-                    else
+                    if isempty(xAx)
                         xAx = (1:obj.nReps);
                     end
                     for ind = (1:length(ints))
@@ -1382,11 +1382,8 @@ classdef DataRecon < handle
                     end
                     title(dynAx,'Dynamic Curves');
                     ylabel(dynAx,'MR Signal (a.u.)');
-                    if ~isnan(tStep)
-                        xlabel(dynAx,'Time (s)')
-                    else
-                        xlabel(dynAx,'Frames');
-                    end
+                    xlabel(dynAx,xLbl)
+                    
                     if opts.calcT1
                         disp('Draw Region to use in T1 calculation');
                         region = drawrectangle(dynAx);

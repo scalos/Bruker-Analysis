@@ -453,7 +453,7 @@ classdef ImageRecon<handle
                 cmap = obj.layers{layerInd}.cmap;
                 adjustCmap(cmap,opts.nControlPts,[],"dispAx",ax);
                 if opts.iterative
-                    opts.reset = true;
+                    opts.reset = false;
                     res = input('Enter/apply/esc: ','s');
                     switch res
                         case ''

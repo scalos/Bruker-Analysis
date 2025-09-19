@@ -146,6 +146,10 @@ classdef Report < handle
             end
         end
         
+        function openDir(obj)
+            system(sprintf("open %s",strrep(obj.reportDir,' ','\ ')))
+        end
+
         function update(obj)
             % Open the main report text file
             reportFile = fullfile(obj.reportDir, obj.reportFileName);

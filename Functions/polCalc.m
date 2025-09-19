@@ -1,4 +1,20 @@
-function polCalc(dynInts,tAx,teInt,flipAng,p0,tDelay,opts)
+function dynFit = polCalc(dynInts,tAx,teInt,flipAng,p0,tDelay,opts)
+    %%%%%%%%%%%%%
+    % polCalc(dynInts,tAx,teInt,flipAng,p0,tDelay,opts)
+    %   dynInts: array of integrals from polarization decay spectra
+    %       tAx: list of times in seconds corresponding to decay acquisition
+    %     teInt: integral of thermal signal
+    %        p0: natural polarization (use natPol.m or calculate manually)
+    %    tDelay: delay in seconds from dissol. to start of decay acquisition
+    %   options: (Both default true)
+    %         - opts.flipCorr: correct dnp according to flip angle 
+    %        - opts.decayCorr: compensate for depletion of dnp signal from
+    %                           measurements
+    %
+    % Returns a fit object corresponding to the decay fit and creates a
+    % plot of the fit with % polarization and T1 labeled.
+    %%%%%%%%%%%%%
+
     arguments
         dynInts 
         tAx
