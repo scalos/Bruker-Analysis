@@ -257,7 +257,7 @@ classdef ImageRecon<handle
                             mustBeLessThanOrEqual(opts.thresh,1)} = [];
                 opts.mask (:,:) logical = [];
                 opts.cmap (:,3) = [];
-                opts.clim (1,2) = [];
+                opts.clim = [];
             end
 
             %Layer is 3d matrix (x,y,nReps)
