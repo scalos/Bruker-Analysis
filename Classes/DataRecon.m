@@ -964,7 +964,7 @@ classdef DataRecon < handle
                     error("Valid bounds types are: 'ppm' or 'ind'");
             end
             bds = sort(bds);
-            specs = zeros(numel(bds(1):bds(2)),obj.dimX,obj.dimY,z);
+            specs = zeros(numel(bds(1):bds(2)),obj.dimX,obj.dimY,1);
             count = 0;
             zeroPhases = zeros(size(ints));
             specs_raw = squeeze(sum(obj.rData(:,:,:,z,reps),5));

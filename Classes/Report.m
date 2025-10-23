@@ -56,6 +56,7 @@ classdef Report < handle
                 opts.name = [];
                 opts.commandRecord = true;
                 opts.saveCode = [];
+                opts.timeStamp = true;
             end
             if isnan(parentDir)
                 parentDir = uigetdir;
@@ -88,9 +89,12 @@ classdef Report < handle
             else
                 if isempty(opts.name)
                     % Default name:
-                    dirName = sprintf('%s_ReconReport', timeStamp);
+                    dirName = 'ReconReport';
                 else
                     dirName = opts.name;
+                end
+                if opts.timeStamp
+                    dirName = sprintf('%s_%s',timeStamp,dirName);
                 end
                 reportDir = fullfile(parentDir, dirName);
                 recordDir = fullfile(reportDir,obj.recordDirName);

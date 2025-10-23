@@ -5,6 +5,7 @@ classdef ImageRecon<handle
         dispAx;
         rotAng = 0;
         baseInd = 1;
+        cropRect = [];
         aspect = [];
         prefs = struct('rotationInterpMethod','bilinear', ...
                        'colorbar',struct('visible',false,...
@@ -59,6 +60,32 @@ classdef ImageRecon<handle
             if ~isempty(baseData)
                 obj.addLayer(baseData,style="struc");
             end
+        end
+
+        function crop(obj)
+            currVis = obj.whosVis;
+            obj.setVis(1);
+            obj.show;
+            cropRect_ = drawrectangle(obj.dispAx,'FaceAlpha',0);
+            adjusting = true;
+            while adjusting
+                res = input('apply/esc -> ','s');
+                switch res
+                    case 'apply'
+                        adjusting = false;
+                        save = true;
+                    case 'esc'
+                        adjusting = false;
+                        save = false;
+                    otherwise
+                        disp('invalid response');
+                end
+            end
+            if save
+                obj.cropRect = cropRect_.Position;
+            end
+            delete(cropRect_);
+            obj.setVis(currVis);
         end
 
         function baseLayer = get.base(obj)
@@ -116,6 +143,7 @@ classdef ImageRecon<handle
                  opts.lbl_RGB = [1,1,1];
                  opts.lbl_Shift = [0,0];
                  opts.lbl_fontSize = 12;
+                 opts.clearFig = false;
             end
             if ~iscell(roiMasks)
                 roiMasks = {roiMasks};
@@ -123,10 +151,13 @@ classdef ImageRecon<handle
             if targetInd>numel(obj.layers)
                 error('Target Index (%d) is out of range for %d layers',targetInd,numel(obj.layers));
             end
-            obj.show;
+            obj.show("clearFig",opts.clearFig,'bounds',obj.dispAx.Position);
             roiInfo = cell(length(roiMasks),1);
             for idx = 1:numel(roiMasks)
                 roiMask =obj.globalTforms(roiMasks{idx}');
+                if ~isempty(obj.cropRect)
+                    roiMask = imcrop(roiMask,obj.cropRect);
+                end
                 maskCenter = regionprops(roiMask,'Centroid');
                 hold(obj.dispAx,'on');
                 rgb = opts.roi_RGB;
@@ -226,7 +257,7 @@ classdef ImageRecon<handle
                             mustBeLessThanOrEqual(opts.thresh,1)} = [];
                 opts.mask (:,:) logical = [];
                 opts.cmap (:,3) = [];
-                opts.clim (1,2) = [0,1];
+                opts.clim (1,2) = [];
             end
 
             %Layer is 3d matrix (x,y,nReps)
@@ -287,8 +318,9 @@ classdef ImageRecon<handle
                               mustBeLessThanOrEqual(opts.spacing,1)}= 0;
                 opts.hSqueeze {mustBeGreaterThanOrEqual(opts.hSqueeze,0),...
                               mustBeLessThanOrEqual(opts.hSqueeze,1)}= 0;
-                opts.autoThresh = false;
                 opts.autoCB = true;
+                opts.matchSizes = false;
+                opts.clearFig = true;
             end
             if isempty(inds)
                 inds = 1:numel(obj.layers);
@@ -298,6 +330,9 @@ classdef ImageRecon<handle
                 parent = figure;
             else
                 parent = opts.parent;
+            end
+            if opts.clearFig
+                clf(parent);
             end
             currAx = obj.dispAx;
             visLayers = obj.whosVis;
@@ -316,7 +351,7 @@ classdef ImageRecon<handle
                     obj.setVis(inds(idx));
                     set(ax,'Visible','on');
                     obj.dispAx = ax;
-                    obj.show("autoCB",opts.autoCB,"autoThresh",opts.autoThresh,'bounds',pos,'clearFig',false);
+                    obj.show("autoCB",opts.autoCB,'bounds',pos,'clearFig',false);
                     if ~isempty(opts.zoom)
                         axis(obj.dispAx,opts.zoom);
                     end
@@ -325,9 +360,27 @@ classdef ImageRecon<handle
                             title(obj.dispAx,obj.layers{inds(idx)}.name)
                         end
                     end
+                else
+                    obj.setVis(0,"holdBase",false);
+                    obj.dispAx = ax;
+                    obj.show("autoCB",opts.autoCB,'bounds',pos,'clearFig',false);
+                    set(ax,'Visible','off');
+                    if ~isempty(opts.zoom)
+                        axis(obj.dispAx,opts.zoom);
+                    end
                 end
                 tileAxes{idx} = ax;
                 axPositions(idx,:) = ax.Position;
+            end
+            if opts.matchSizes
+                min_w = min(axPositions(:,3));
+                min_h = min(axPositions(:,4));
+                for idx = 1:numel(tileAxes)
+                    pos = tileAxes{idx}.Position;
+                    pos(3) = min_w;
+                    pos(4) = min_h;
+                    set(tileAxes{idx},'Position',pos);
+                end
             end
             obj.prefs = old_prefs;
             obj.setVis(visLayers);
@@ -537,7 +590,6 @@ classdef ImageRecon<handle
         function show(obj,opts)
             arguments
                 obj
-                opts.autoThresh = false
                 opts.autoCB = true;
                 opts.clearFig = true;
                 opts.bounds = [0,0,1,1];
@@ -619,30 +671,29 @@ classdef ImageRecon<handle
                         layerMask = obj.globalTforms(layerMask);
                         layerData = mask(layerData,layerMask);
                     end
-                    [dataMin,dataMax] = bounds(layerData,'all');
-                    dataRange = dataMax-dataMin;
-                    dataMax = dataMax-dataRange*(1-layer.clim(2));
-                    dataMin = dataMin+dataRange*layer.clim(1);
-                    %format data for cmap
-                    layerData = layerData-min(min(layerData));
-                    layerData = layerData/max(max(layerData));
-                    layerData_norm = layerData;
-
-                    layerData(layerData<=layer.clim(1)) = layer.clim(1);
-                    layerData(layerData>=layer.clim(2)) = layer.clim(2);
-
-                    layerData = mat2gray(layerData)*height(layer.cmap);
-                    layerTC = ind2rgb(round(layerData),layer.cmap);
-                    if opts.autoThresh
-                        thresh = layer.clim;
-                    else
-                        thresh = layer.thresh;
+                    if ~isempty(obj.cropRect)
+                        layerData = imcrop(layerData,obj.cropRect);
                     end
+                    % [dataMin,dataMax] = bounds(layerData,'all');
+                    % dataRange = dataMax-dataMin;
+                    % dataMax = dataMax-dataRange*(1-layer.clim(2));
+                    % dataMin = dataMin+dataRange*layer.clim(1);
+                    % %format data for cmap
+                    % layerData = layerData-min(min(layerData));
+                    % layerData = layerData/max(max(layerData));
+                    % layerData_norm = layerData;
+                    % 
+                    % layerData(layerData<=layer.clim(1)) = layer.clim(1);
+                    % layerData(layerData>=layer.clim(2)) = layer.clim(2);
+                    % 
+                    % layerData = mat2gray(layerData)*height(layer.cmap);
+                    % layerTC = ind2rgb(round(layerData),layer.cmap);
+                    [layerTC,cBds,dataNorm] = mat2TC(layerData,layer.cmap,"clim",layer.clim);
                     hold(ax,'on');
                     img = imagesc(ax,layerTC);
                     imAlpha = repmat(layer.trans,size(layerData));
-                    imAlpha(layerData_norm<thresh(1)) = 0;
-                    imAlpha(layerData_norm>thresh(2)) = 0;
+                    imAlpha(dataNorm<layer.thresh(1)) = 0;
+                    imAlpha(dataNorm>layer.thresh(2)) = 0;
                     set(img,'AlphaData',imAlpha);
                     set(img,'AlphaDataMapping','none');
                     hold(ax,'off');
@@ -658,7 +709,7 @@ classdef ImageRecon<handle
                         nTicks = obj.prefs.colorbar.nTicks;
                         cb.Ticks = linspace(0,1,nTicks);
                         sf = obj.prefs.colorbar.sigFigs;
-                        ticks = round(linspace(dataMin,dataMax,nTicks),sf,'significant');
+                        ticks = round(linspace(min(cBds),max(cBds),nTicks),sf,'significant');
                         cb.TickLabels = arrayfun(@(x) sprintf('%.*e', sf-1, x), ticks, 'UniformOutput', false);
                         drawnow;
                     end

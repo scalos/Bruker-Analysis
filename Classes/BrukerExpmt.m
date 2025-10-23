@@ -19,8 +19,6 @@ classdef BrukerExpmt < handle
         Visu = {};
         sysParams = struct;
         brukerRawObj = NaN;
-        brukerFrameObj = NaN;
-        brukerCKObject = NaN;
     end
 
     properties (Access = private)
