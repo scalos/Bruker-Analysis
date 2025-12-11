@@ -438,31 +438,50 @@ classdef ImageRecon<handle
             end
         end
 
-        function animate(obj,ind,opts)
+        function animate(obj,inds,opts)
             arguments
                 obj 
-                ind 
+                inds = [];
                 opts.dt = 0.1;
-                opts.frames {mustBeInteger} = [];
+                %opts.frames {mustBeInteger} = [];
             end
-        
-            initRep = obj.layers{ind}.viewRep;
-            reps = 1:obj.layers{ind}.nReps;
-            
-            if ~isempty(opts.frames)
-                assert(all(opts.frames>=1 & opts.frames<=numel(reps)), ...
-                    'Error: frame range is out of bounds.');
-                reps = opts.frames;
+            if isempty(inds)
+                inds = obj.whosVis;
             end
-            currVis = obj.whosVis;
-            obj.setVis(ind);
-            for rep = reps
-                obj.layers{ind}.viewRep = rep;
+            nReps = zeros(numel(inds),1);
+            initReps = zeros(numel(inds),1);
+            for idx = 1:numel(inds)
+                ind = inds(idx);
+                nReps(idx) = obj.layers{ind}.nReps;
+                initReps(idx) = obj.layers{ind}.viewRep;
+            end
+
+            for rep = 1:max(nReps)
+                for idx = 1:numel(inds)
+                    ind = inds(idx);
+                    
+                    % if ~isempty(opts.frames)
+                    %     assert(all(opts.frames>=1 & opts.frames<=numel(reps)), ...
+                    %         'Error: frame range is out of bounds.');
+                    %     reps = opts.frames;
+                    % end
+                    currVis = obj.whosVis;
+                    visInds = [];
+                    if rep<=nReps(idx)
+                        visInds(end+1) = ind; %#ok agrow
+                        obj.layers{ind}.viewRep = rep;
+                    end
+                end
+                obj.setVis(visInds);
                 obj.show;
                 title(obj.dispAx,sprintf('Frame: %d',rep))
                 pause(opts.dt);
             end
-            obj.layers{ind}.viewRep = initRep;
+            for idx = 1:numel(inds)
+                ind = inds(idx);
+                obj.layers{ind}.viewRep = initReps(idx);
+            end
+            title(obj.dispAx,'');
             obj.setVis(currVis);
             obj.show;
 

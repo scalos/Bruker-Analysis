@@ -1321,7 +1321,7 @@ classdef DataRecon < handle
             end
         end
 
-        function dynAx = showAnalysis(obj,analysisInd,xAx,opts)
+        function dynAx = showAnalysis(obj,analysisInd,opts)
             % Display mode for viewing obj.analysis entries. This method is
             % intended to be used to view dynamic curves (or in general the
             % time evolution of peak integrals). Options can be set to
@@ -1343,12 +1343,12 @@ classdef DataRecon < handle
             arguments
                 obj 
                 analysisInd {mustBeGreaterThanOrEqual(analysisInd,1),mustBeInteger}
-                xAx = []
+                opts.xAx = []
                 opts.showData logical = true;
                 opts.labels = {};
                 opts.calcT1 logical = false;
             end
-            if isempty(xAx)
+            if isempty(opts.xAx)
                 xLbl = 'Frames';
             else
                 xLbl = 'Time (s)';
@@ -1358,8 +1358,10 @@ classdef DataRecon < handle
                 if analysisInd<= length(obj.analysis)
                     ints = obj.analysis{analysisInd}.ints.Integrals;
                     hold(dynAx,"on")
-                    if isempty(xAx)
+                    if isempty(opts.xAx)
                         xAx = (1:obj.nReps);
+                    else
+                        xAx = opts.xAx;
                     end
                     for ind = (1:length(ints))
                         plot(dynAx,xAx,ints{ind});

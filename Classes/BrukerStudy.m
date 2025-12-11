@@ -7,9 +7,11 @@ classdef BrukerStudy < handle
 
     properties (Access = private)
         expmtCache;
+        expmtTimes;
     end
 
     methods (Access = private)
+
         function loaded = isLoaded(obj,expmtNum)
             expmtNums = obj.getNums;
             ind = find(expmtNum==expmtNums);
@@ -78,6 +80,8 @@ classdef BrukerStudy < handle
                 try
                     acqp = readBrukerParamFile(char(fullfile(obj.path,string(expmtNum),'acqp')));
                     eName = acqp.ACQ_scan_name;
+                    eTime = acqp.ACQ_abs_time{1};
+                    obj.expmtTimes{ind} = eTime;
                     obj.expmtCache{ind} = sprintf('%2d: (UNLOADED) %s',expmtNum,eName);
                 catch ME
                     obj.expmtCache{ind} = sprintf("%2d: ERROR",expmtNum);
@@ -92,7 +96,7 @@ classdef BrukerStudy < handle
 
         %%%%%%%%%% Experiment Methods %%%%%%%%%%%%%
 
-        function loadExpmts(obj,loadNums)
+        function loadExpmts(obj,loadNums,opts)
             % Method used to load bruker experiments and populate
             % obj.expmts with BrukerExpmt objects. Failed loads will be
             % reported along with their error messages but the method will
@@ -108,6 +112,10 @@ classdef BrukerStudy < handle
             arguments
                 obj 
                 loadNums {mustBeInteger,mustBeGreaterThanOrEqual(loadNums,1)} = [];
+                opts.loadData {mustBeMember(opts.loadData,{'raw','fidProc','2dSeq','all','none'})} = 'all';
+                opts.loadProcInds = [];
+                opts.genKSpaces = true;
+                opts.excludeLoaded = true;
             end
             expmtNums = obj.getNums;
             if isempty(loadNums)
@@ -119,10 +127,29 @@ classdef BrukerStudy < handle
             for ind = (1:length(loadNums))
                 waitbar((ind-1)*1/length(loadNums),progBar,sprintf('Loading Experiment %2d of %2d',ind,length(loadNums)))
                 expmtInd = find(expmtNums==loadNums(ind));
+                loadFidProc = strcmp(opts.loadData,'fidProc');
+                load2dSeq = strcmp(opts.loadData,'2dSeq');
+                loadRaw = strcmp(opts.loadData,'raw');
+                if strcmp(opts.loadData,'all')
+                    loadFidProc = true;
+                    load2dSeq = true;
+                    loadRaw = true;
+                end
+              
                 if expmtInd
                     try
-                        newExpmts{expmtInd} = BrukerExpmt(char(fullfile(obj.path,string(loadNums(ind)))));
-                        fprintf('Loaded: .../%2d -> %s\n',newExpmts{expmtInd}.num,newExpmts{expmtInd}.name);
+                        if obj.isLoaded(loadNums(ind)) && opts.excludeLoaded
+                            fprintf('Experiment #%d is already loaded. Skipping...\n',loadNums(ind));
+                            continue;
+                        else
+                            newExpmts{expmtInd} = BrukerExpmt(char(fullfile(obj.path,string(loadNums(ind)))), ...
+                                "load2dSeq",load2dSeq, ...
+                                "loadFidProc",loadFidProc, ...
+                                'loadProcInds',opts.loadProcInds, ...
+                                'genKSpaces',opts.genKSpaces,...
+                                'loadRaw',loadRaw);
+                            fprintf('Loaded: .../%2d -> %s\n',newExpmts{expmtInd}.num,newExpmts{expmtInd}.name);
+                        end
                     catch ME
                         warning('Failed to load experiment #%d',loadNums(ind));
                         warning(getReport(ME));
@@ -151,12 +178,14 @@ classdef BrukerStudy < handle
 
             expmtNums = obj.getNums;
             list = cell(length(expmtNums),1);
+            times = zeros(length(expmtNums),1);
             for ind = (1:length(expmtNums))
                 expmtNum = expmtNums(ind);
                 try
                     if obj.isLoaded(expmtNum)
                         %If loaded: append identifiers to list
                         list{ind} = sprintf('%2d: ( LOADED ) %s',obj.expmts{ind}.num,obj.expmts{ind}.name);
+                        times(ind) = obj.expmts{ind}.absTime;
                     else
                         if ~isempty(obj.expmtCache{ind})
                             if contains(char(obj.expmtCache{ind}),'ERROR')
@@ -164,18 +193,25 @@ classdef BrukerStudy < handle
                                 %error: try to load again
                                 acqp = readBrukerParamFile(char(fullfile(obj.path,string(expmtNum),'acqp')));
                                 eName = acqp.ACQ_scan_name;
+                                eTime = acqp.ACQ_abs_time{1};
+                                obj.expmtTimes{ind} = eTime;
                                 obj.expmtCache{ind} = sprintf('%2d: (UNLOADED) %s',expmtNum,eName);
                                 list{ind} = sprintf('%2d: (UNLOADED) %s',expmtNum,eName);
+                                times(ind) = eTime;
                             else
                                 %If previously cached but not loaded:
                                 %append identifiers to list
                                 list{ind} = obj.expmtCache{ind};
+                                times(ind) = obj.expmtTimes{ind};
                             end
                         else
                             %If cache entry is empty: try to load
                             acqp = readBrukerParamFile(char(fullfile(obj.path,string(expmtNum),'acqp')));
                             eName = acqp.ACQ_scan_name;
+                            eTime = acqp.ACQ_abs_time{1};
+                            obj.expmtTimes{ind} = eTime;
                             list{ind} = sprintf('%2d: (UNLOADED) %s',expmtNum,eName);
+                            times(ind) = eTime;
                             obj.expmtCache{ind} = list{ind};
                         end
                     end
@@ -183,10 +219,12 @@ classdef BrukerStudy < handle
                     %catch loading errors and append error status (also
                     %display error report)
                     list{ind} = sprintf("%2d: ERROR",expmtNum);
+                    times(ind) = 0;
                     warning(getReport(ME))
                 end
             end
-
+            [~,sortOrder] = sort(times);
+            list = list(sortOrder);
             %Finally show list:
             for ind = (1:length(list))
                 disp(list{ind});

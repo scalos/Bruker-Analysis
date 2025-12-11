@@ -5,6 +5,7 @@ function whiskerPlot(data, opts)
         opts.groupLabels = [];
         opts.dataSpread = 1;
         opts.boxColors = [];             % nGroups x 3 RGB array
+        opts.showData = true;
         opts.markerColor = [0, 0, 0];
         opts.markerSize = 20;
         opts.markerStyle = 'o';
@@ -27,7 +28,7 @@ function whiskerPlot(data, opts)
         opts.boxColors = lines(nGroups);  % MATLAB colormap
     end
     
-    opts.boxColors = [255,126,124;255,213,129]/255;
+    %opts.boxColors = [255,126,124;255,213,129]/255;
 
     boxes = gobjects(nGroups,1);
 
@@ -36,7 +37,7 @@ function whiskerPlot(data, opts)
         x = repmat(i, size(y));  % fixed X position for group
 
         boxes(i) = boxchart(ax, x, y,'BoxFaceColor', opts.boxColors(i,:), ...
-                                     'BoxFaceAlpha',1,'BoxEdgeColor','k');
+                                     'BoxFaceAlpha',1,'BoxEdgeColor','k','MarkerSize',opts.markerSize);
     end
 
     % Apply group labels
@@ -53,13 +54,15 @@ function whiskerPlot(data, opts)
 
     end
     nPoints = size(data,1);
-    for idx = 1:size(data,2)
-        xRange = linspace(double(boxes(idx).XData(idx))-boxes(idx).BoxWidth*opts.dataSpread/2,...
-                  double(boxes(idx).XData(idx))+boxes(idx).BoxWidth*opts.dataSpread/2,nPoints);
-        if opts.markerFilled
-            scatter(ax,xRange,data(:,idx),opts.markerSize,opts.markerColor,opts.markerStyle,'filled');
-        else
-            scatter(ax,xRange,data(:,idx),opts.markerSize,opts.markerColor,opts.markerStyle);
+    if opts.showData
+        for idx = 1:size(data,2)
+            xRange = linspace(double(boxes(idx).XData(idx))-boxes(idx).BoxWidth*opts.dataSpread/2,...
+                      double(boxes(idx).XData(idx))+boxes(idx).BoxWidth*opts.dataSpread/2,nPoints);
+            if opts.markerFilled
+                scatter(ax,xRange,data(:,idx),opts.markerSize,opts.markerColor,opts.markerStyle,'filled');
+            else
+                scatter(ax,xRange,data(:,idx),opts.markerSize,opts.markerColor,opts.markerStyle);
+            end
         end
     end
     set(ax,'XTick',[]);

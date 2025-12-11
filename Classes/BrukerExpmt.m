@@ -1,6 +1,7 @@
 classdef BrukerExpmt < handle
     properties
         name;
+        absTime;
         scanMethod = NaN;
         num;
         path;
@@ -27,9 +28,14 @@ classdef BrukerExpmt < handle
     end 
 
 	methods
-		function obj = BrukerExpmt(path)
+		function obj = BrukerExpmt(path,opts)
             arguments
                 path = NaN;
+                opts.loadFidProc = true;
+                opts.load2dSeq = true;
+                opts.loadRaw = true;
+                opts.loadProcInds = [];
+                opts.genKSpaces = true;
             end
             
             if isnan(path)
@@ -54,19 +60,23 @@ classdef BrukerExpmt < handle
             %%%%%%%%%%%%%%% LOAD PARAMETER FILES %%%%%%%%%%%%%%%%%%%%%%
             [~,name,~] = fileparts(obj.path);
             obj.num = str2double(name);
-            brukerRawObj = RawDataObject(char(obj.procPaths{1}));
-            obj.brukerRawObj = brukerRawObj;
-            obj.rawData = brukerRawObj.data{1};
+            if opts.loadRaw
+                brukerRawObj = RawDataObject(char(obj.procPaths{1}));
+                obj.brukerRawObj = brukerRawObj;
+                obj.rawData = brukerRawObj.data{1};
+            end
             %Acqp and Method appear only once in expmt folder
-            obj.Acqp = brukerRawObj.Acqp;
-            obj.Method = brukerRawObj.Method;
+            obj.Acqp = readBrukerParamFile(fullfile(path,'acqp'));
+            obj.Method = readBrukerParamFile(fullfile(path,'method'));
+            obj.absTime = obj.Acqp.ACQ_abs_time{1};
             %Load copy of reco and visu files for each pdata folder
             validProcPaths = ones(size(obj.procPaths));
             for idx = (1:length(obj.procPaths))
                 try
-		            brukerRawObj = RawDataObject(char(obj.procPaths{idx}));
-                    obj.Reco{end+1} = brukerRawObj.Reco;
-                    obj.Visu{end+1} = brukerRawObj.readVisu.Visu;
+		            %brukerRawObj = RawDataObject(char(obj.procPaths{idx}));
+                    procPath = fullfile(obj.procPaths{idx});
+                    obj.Reco{end+1} = readBrukerParamFile(fullfile(procPath,'reco'));
+                    obj.Visu{end+1} = readBrukerParamFile(fullfile(procPath,'visu_pars'));
                 catch
                     warning('Error loading parameter files for %s/pdata/%d. Skipping folder...',obj.path,idx);
                     validProcPaths(idx) = 0;
@@ -162,13 +172,27 @@ classdef BrukerExpmt < handle
                                     obj.spatialSizes(2),obj.spatialSizes(3),obj.nReps];
             
             %%%%%%%%%%%%%%%%%%%%%%%% LOAD PROCESSED DATA %%%%%%%%%%%%%%%%%
-            obj.loadFidProc;
-            obj.load2dseq;
-
+            if opts.loadFidProc
+                obj.loadFidProc('loadInds',opts.loadProcInds,'genKSpace',opts.genKSpaces);
+            end
+            if opts.load2dSeq
+                obj.load2dseq('loadInds',opts.loadProcInds,'genKSpace',opts.genKSpaces);
+            end
         end
 
-        function loadFidProc(obj)
-            for idx = (1:length(obj.procPaths))
+        function loadFidProc(obj,opts)
+            arguments
+                obj
+                opts.loadInds = [];
+                opts.genKSpace = true;
+            end
+            if isempty(opts.loadInds)
+                loadInds = 1:length(obj.procPaths);
+            else
+                loadInds = opts.loadInds;
+                %TODO: validate loadInds
+            end
+            for idx = loadInds
                 procPath = obj.procPaths{idx};
                 % Supported methods for fid or fid_proc files:
                 if ~isempty(strfind(obj.Acqp.ACQ_method,'CSI')) || ...
@@ -195,28 +219,31 @@ classdef BrukerExpmt < handle
                             end
                             
                             % K-Space reconstruction:
-                            
-                            if obj.is360
-                                tFormMat = {
-                                            {},...
-                                            {'fftshift','fft','fftshift'},...
-                                            {'fftshift','fft','fftshift'},...
-                                            {'fftshift','fft','fftshift'},...
-                                            {},{}
-                                            };
-                                obj.sysParams.kReconOrder = tFormMat;
-                                procDataRecon = K_R_Tform(procDataRaw,tFormMat);
-    
+                            if opts.genKSpace
+                                if obj.is360
+                                    tFormMat = {
+                                                {},...
+                                                {'fftshift','fft','fftshift'},...
+                                                {'fftshift','fft','fftshift'},...
+                                                {'fftshift','fft','fftshift'},...
+                                                {},{}
+                                                };
+                                    obj.sysParams.kReconOrder = tFormMat;
+                                    procDataRecon = K_R_Tform(procDataRaw,tFormMat);
+        
+                                else
+                                    tFormMat = {
+                                                {},...
+                                                {'fft','fftshift'},...
+                                                {'fft','fftshift'},...
+                                                {'fft','fftshift'},...
+                                                {},{}
+                                                };
+                                    obj.sysParams.kReconOrder = tFormMat;
+                                    procDataRecon = K_R_Tform(procDataRaw,tFormMat);
+                                end
                             else
-                                tFormMat = {
-                                            {},...
-                                            {'fft','fftshift'},...
-                                            {'fft','fftshift'},...
-                                            {'fft','fftshift'},...
-                                            {},{}
-                                            };
-                                obj.sysParams.kReconOrder = tFormMat;
-                                procDataRecon = K_R_Tform(procDataRaw,tFormMat);
+                                procDataRecon = [];
                             end
                         end
                         obj.procData.raw{end+1} = procDataRaw;
@@ -234,9 +261,20 @@ classdef BrukerExpmt < handle
 
         end
     
-        function load2dseq(obj)
+        function load2dseq(obj,opts)
+            arguments
+                obj
+                opts.loadInds = [];
+                opts.genKSpace = true;
+            end
+            if isempty(opts.loadInds)
+                loadInds = 1:length(obj.procPaths);
+            else
+                loadInds = opts.loadInds;
+                %TODO: validate loadInds
+            end
             %Loop through procno paths to load processed data:
-            for idx = (1:length(obj.procPaths))
+            for idx = loadInds
                 procPath = obj.procPaths{idx};
                 if ~isempty(bruker_findDataname(procPath,'2dseq'))
                     try
@@ -265,16 +303,20 @@ classdef BrukerExpmt < handle
                                 end
                             end
                             %Weird that we need this but...
-                            seqDataRaw = flip(seqDataRaw,1);
-
-                            tFormMat = {
-                                            {'ifft','ifftshift'},...
-                                            {'fftshift','fft','fftshift'},...
-                                            {'fftshift','fft','fftshift'},...
-                                            {'fftshift','fft','fftshift'},...
-                                            {},{}
-                                            };
-                            seqDataRecon = K_R_Tform(seqDataRaw,tFormMat);
+                            %seqDataRaw = flip(seqDataRaw,1);
+                            
+                            if opts.genKSpace
+                                tFormMat = {
+                                                {'ifft','ifftshift'},...
+                                                {'fftshift','fft','fftshift'},...
+                                                {'fftshift','fft','fftshift'},...
+                                                {'fftshift','fft','fftshift'},...
+                                                {},{}
+                                                };
+                                seqDataRecon = K_R_Tform(seqDataRaw,tFormMat);
+                            else
+                                seqDataRecon = [];
+                            end
                             obj.seqData.kspace{end+1} = seqDataRecon;
                         end
                         obj.seqData.raw{end+1} = seqDataRaw;
