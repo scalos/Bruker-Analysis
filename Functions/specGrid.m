@@ -10,7 +10,7 @@ function specGrid(spectra, bkgdImg, opts)
         opts.grayClim = [];
         opts.pltRBG = [1,1,1];
         opts.pltLW = 1;
-        opts.baseCmap = 'gray';
+        opts.baseCmap = gray(256);
     end
     if isempty(bkgdImg)
         bkgdImg = zeros(size(spectra,2),size(spectra,3));

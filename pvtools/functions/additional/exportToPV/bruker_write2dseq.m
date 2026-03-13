@@ -70,12 +70,7 @@ if length(dims) >= 5
     data=reshape(data, [VisuCoreSize, prod(dims(5:end))]);
 end
 
-%% Split real and imaginary
-if ~isreal(data)
-   data(:,:,:,:,:,2)=imag(data);
-   data(:,:,:,:,:,1)=real(data(:,:,:,:,:,1));
-   data=reshape(data, [size(data,1), size(data,2), size(data,3), size(data,4), size(data,5)*2]);
-end
+
     
 
 %% Un-Mapping data
@@ -88,6 +83,13 @@ data=data-offset;
 slope = repmat(VisuCoreDataSlope',[prod(VisuCoreSize),1]);
 slope = reshape(slope,size(data));
 data=data./slope;
+
+%% Split real and imaginary
+if ~isreal(data)
+   data(:,:,:,:,:,2)=imag(data);
+   data(:,:,:,:,:,1)=real(data(:,:,:,:,:,1));
+   data=reshape(data, [size(data,1), size(data,2), size(data,3), size(data,4), size(data,5)*2]);
+end
 
 %% Round:
 if strcmp(round_type, 'round')

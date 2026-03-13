@@ -190,6 +190,7 @@ classdef ImageRecon<handle
                 end
                 roiInfo{idx}.sum = abs(sum(sum(roiData)));
                 roiInfo{idx}.area = abs(regionprops(roiMask','Area').Area);
+                roiInfo{idx}.std = std(roiData,[],"all");
                 roiInfo{idx}.mean = roiInfo{idx}.sum/roiInfo{idx}.area;
                 if opts.showInfo
                     text(obj.dispAx,maskCenter.Centroid(1)+opts.lbl_Shift(1), ...
@@ -678,7 +679,7 @@ classdef ImageRecon<handle
                     if ~layer.tPose
                         layerData = layerData';
                     end
-                    layerData = imresize(layerData,baseSize);
+                    layerData = imresize(layerData,baseSize,"nearest");
                     layerData = obj.globalTforms(layerData);
                     layerData = circshift(layerData,layer.shift);
                     if ~isempty(layer.mask)
@@ -713,6 +714,7 @@ classdef ImageRecon<handle
                     imAlpha = repmat(layer.trans,size(layerData));
                     imAlpha(dataNorm<layer.thresh(1)) = 0;
                     imAlpha(dataNorm>layer.thresh(2)) = 0;
+                    imAlpha(isnan(dataNorm)) = 0;
                     set(img,'AlphaData',imAlpha);
                     set(img,'AlphaDataMapping','none');
                     hold(ax,'off');

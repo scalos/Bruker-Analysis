@@ -9,11 +9,13 @@ function dynFit = polCalc(dynInts,tAx,teInt,flipAng,p0,tDelay,opts)
     %    tDelay: delay in seconds from dissol. to start of decay acquisition
     %   options: (Both default true)
     %         - opts.flipCorr: correct dnp according to flip angle 
-    %        - opts.decayCorr: compensate for depletion of dnp signal from
+    %         - opts.decayCorr: compensate for depletion of dnp signal from
     %                           measurements
     %
     % Returns a fit object corresponding to the decay fit and creates a
     % plot of the fit with % polarization and T1 labeled.
+
+    % Usage example: polCalc(dynInts,times,0.5305,5,natPol(300,1.4,"13C"),13.36)
     %%%%%%%%%%%%%
 
     arguments

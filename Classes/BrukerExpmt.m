@@ -71,7 +71,14 @@ classdef BrukerExpmt < handle
             obj.absTime = obj.Acqp.ACQ_abs_time{1};
             %Load copy of reco and visu files for each pdata folder
             validProcPaths = ones(size(obj.procPaths));
-            for idx = (1:length(obj.procPaths))
+
+            if isempty(opts.loadProcInds)
+                loadInds = 1:length(obj.procPaths);
+            else
+                loadInds = opts.loadProcInds;
+                %TODO: validate loadInds
+            end
+            for idx = loadInds
                 try
 		            %brukerRawObj = RawDataObject(char(obj.procPaths{idx}));
                     procPath = fullfile(obj.procPaths{idx});
@@ -86,6 +93,15 @@ classdef BrukerExpmt < handle
                 if ~validProcPaths(idx)
                     obj.procPaths(idx) = [];
                 end
+            end
+
+            %Updayte loadInds to exclude invalid paths unless explicitly
+            %set:
+            if isempty(opts.loadProcInds)
+                loadInds = 1:length(obj.procPaths);
+            else
+                loadInds = opts.loadProcInds;
+                %TODO: validate loadInds
             end
             
             %%%%%%%%%%% LOAD USEFUL PARAMETERS FROM FILES %%%%%%%%%%%%
@@ -173,10 +189,10 @@ classdef BrukerExpmt < handle
             
             %%%%%%%%%%%%%%%%%%%%%%%% LOAD PROCESSED DATA %%%%%%%%%%%%%%%%%
             if opts.loadFidProc
-                obj.loadFidProc('loadInds',opts.loadProcInds,'genKSpace',opts.genKSpaces);
+                obj.loadFidProc('loadInds',loadInds,'genKSpace',opts.genKSpaces);
             end
             if opts.load2dSeq
-                obj.load2dseq('loadInds',opts.loadProcInds,'genKSpace',opts.genKSpaces);
+                obj.load2dseq('loadInds',loadInds,'genKSpace',opts.genKSpaces);
             end
         end
 
@@ -291,19 +307,17 @@ classdef BrukerExpmt < handle
                             
                         
                             if prod(obj.spatialSizes)>1
-                                if obj.isEPSI
-                                    seqDataRaw = reshape(seqDataRaw,...
-                                    [obj.spatialSizes(1),obj.nPoints ...
-                                    obj.spatialSizes(2),obj.spatialSizes(3),obj.nReps]);
-                                    seqDataRaw = permute(seqDataRaw,[2,1,3,4,5,6]);
-                                else
-                                    seqDataRaw = reshape(seqDataRaw,...
-                                        [obj.nPoints,obj.spatialSizes(1), ...
-                                        obj.spatialSizes(2),obj.spatialSizes(3),obj.nReps]);
-                                end
+                                % if obj.isEPSI
+                                %     seqDataRaw = reshape(seqDataRaw,...
+                                %     [obj.spatialSizes(1),obj.nPoints ...
+                                %     obj.spatialSizes(2),obj.spatialSizes(3),obj.nReps]);
+                                %     %seqDataRaw = permute(seqDataRaw,[2,1,3,4,5,6]);
+                                % else
+                                %     seqDataRaw = reshape(seqDataRaw,...
+                                %         [obj.nPoints,obj.spatialSizes(1), ...
+                                %         obj.spatialSizes(2),obj.spatialSizes(3),obj.nReps]);
+                                % end
                             end
-                            %Weird that we need this but...
-                            %seqDataRaw = flip(seqDataRaw,1);
                             
                             if opts.genKSpace
                                 tFormMat = {
