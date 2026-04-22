@@ -1,12 +1,13 @@
-classdef VisObj<handle
+classdef GeometryObj<handle
 
     properties
-        data;
         params;
-        cmap = gray(256);
         nSlices;
         nEchos;
         nReps;
+        coreSize;
+        fgOrder;
+        fgDims;
     end
 
     properties (Dependent)
@@ -17,9 +18,8 @@ classdef VisObj<handle
     end
 
     methods
-        function obj = VisObj(data,params)
+        function obj = GeometryObj(params)
             arguments
-                data %must be in shape: [core_dims,frameGroups]
                 params.allParams = [];
 
                 params.VisuCoreFrameCount = []; %num repititions
@@ -91,11 +91,16 @@ classdef VisObj<handle
             fgOrder(cellfun('isempty',fgOrder)) = {0};
             fgOrder = cell2mat(fgOrder);
             fgOrder(fgOrder==0) = [];
+            obj.fgOrder = fgOrder;
+            obj.coreSize = coreSize;
+            obj.fgDims = fgDims;
+        end
 
-            expectedShape = [coreSize,fgDims];
+        function fdata = formatData(obj,data)
+            expectedShape = [obj.coreSize,obj.fgDims];
             expectedShape_squeezed = expectedShape(expectedShape~=1);
             if ~all(isequal(size(squeeze(data)),expectedShape_squeezed))
-                error('ERROR: Data shape of %s does not match expected %s', ...
+                error('ERROR: INCOMPATIBLE DATA!\nData shape of %s does not match expected %s', ...
                     formattedDisplayText(size(squeeze(data)),"SuppressMarkup",true), ...
                     formattedDisplayText(expectedShape_squeezed,"SuppressMarkup",true));
             end
@@ -112,9 +117,8 @@ classdef VisObj<handle
             else
                 coreOrder = [4,1,2,3];
             end
-            dataOrder = [coreOrder,fgOrder+4];
-            obj.data = permute(data,dataOrder);
-
+            dataOrder = [coreOrder,obj.fgOrder+4];
+            fdata = permute(data,dataOrder);
         end
 
         function vSize = get.voxSize(obj)
@@ -179,57 +183,57 @@ classdef VisObj<handle
             end
         end
 
-        function visualizeSlices(obj,opts)
-            arguments
-                obj
-                opts.thresh = 0;
-                opts.focSlice = [];
-                opts.ax = []
-            end
-            if ~isempty(opts.ax)
-                if isvalid(opts.ax)
-                    ax = opts.ax;
-                    cla(ax);
-                end
-            else
-                ax = axes(figure);
-            end
-            hold(ax,'on');
-            axis(ax,'equal');
-            grid(ax,'on');
-            colormap(ax,obj.cmap);
-            [xs,ys,zs] = obj.getMapping(obj.affMats_wrld);
-            thresh = opts.thresh;
-            for slice = 1:obj.nSlices
-                
-                xs_frame = squeeze(xs(:,:,:,slice));
-                ys_frame = squeeze(ys(:,:,:,slice));
-                zs_frame = squeeze(zs(:,:,:,slice));
-                frameData = squeeze(sum(obj.data(:,:,:,:,slice),1));
-                frameData(frameData<thresh) = NaN;
-                m = mesh(ax,xs_frame,ys_frame,zs_frame,frameData,'FaceColor','interp');
-                if ~isempty(opts.focSlice)
-                    if isequal(opts.focSlice,slice)
-                        m = mesh(ax,xs_frame,ys_frame,zs_frame,'EdgeColor','r','FaceColor','r','FaceAlpha',0.2,'EdgeAlpha',0.2);
-                    end
-                end
-                set(m,'AlphaData',frameData);
-            end
-            view(ax,3);
+        % function visualizeSlices(obj,opts)
+        %     arguments
+        %         obj
+        %         opts.thresh = 0;
+        %         opts.focSlice = [];
+        %         opts.ax = []
+        %     end
+        %     if ~isempty(opts.ax)
+        %         if isvalid(opts.ax)
+        %             ax = opts.ax;
+        %             cla(ax);
+        %         end
+        %     else
+        %         ax = axes(figure);
+        %     end
+        %     hold(ax,'on');
+        %     axis(ax,'equal');
+        %     grid(ax,'on');
+        %     colormap(ax,obj.cmap);
+        %     [xs,ys,zs] = obj.getMapping(obj.affMats_wrld);
+        %     thresh = opts.thresh;
+        %     for slice = 1:obj.nSlices
+        % 
+        %         xs_frame = squeeze(xs(:,:,:,slice));
+        %         ys_frame = squeeze(ys(:,:,:,slice));
+        %         zs_frame = squeeze(zs(:,:,:,slice));
+        %         frameData = squeeze(sum(obj.data(:,:,:,:,slice),1));
+        %         frameData(frameData<thresh) = NaN;
+        %         m = mesh(ax,xs_frame,ys_frame,zs_frame,frameData,'FaceColor','interp');
+        %         if ~isempty(opts.focSlice)
+        %             if isequal(opts.focSlice,slice)
+        %                 m = mesh(ax,xs_frame,ys_frame,zs_frame,'EdgeColor','r','FaceColor','r','FaceAlpha',0.2,'EdgeAlpha',0.2);
+        %             end
+        %         end
+        %         set(m,'AlphaData',frameData);
+        %     end
+        %     view(ax,3);
+        % 
+        % end
 
-        end
-
-        function showFrame(obj,frame)
-            [xs,ys,~] = obj.getMapping(obj.affMats_img);
-            xs_frame = squeeze(xs(:,:,:,frame));
-            ys_frame = squeeze(ys(:,:,:,frame));
-            frameData = squeeze(sum(obj.data(:,:,:,1,frame),1));
-            ax = axes(figure);
-            imagesc(ax,xs_frame(:,1),ys_frame(1,:),frameData')
-            colormap(ax,obj.cmap);
-            set(ax,'YDir','normal');
-            axis(ax,'image');
-        end
+        % function showFrame(obj,frame)
+        %     [xs,ys,~] = obj.getMapping(obj.affMats_img);
+        %     xs_frame = squeeze(xs(:,:,:,frame));
+        %     ys_frame = squeeze(ys(:,:,:,frame));
+        %     frameData = squeeze(sum(obj.data(:,:,:,1,frame),1));
+        %     ax = axes(figure);
+        %     imagesc(ax,xs_frame(:,1),ys_frame(1,:),frameData')
+        %     colormap(ax,obj.cmap);
+        %     set(ax,'YDir','normal');
+        %     axis(ax,'image');
+        % end
 
         function showFocNav(obj)
             lbls = {'Freq','x','y','z'};
@@ -251,9 +255,7 @@ classdef VisObj<handle
                 axMaps{end+1} = 1:obj.nReps;
             end
             ndFocNav(obj.data,"dimLbls",lbls,"intensityLbl",'MR Signal (a.u.)','axMaps',axMaps);
-
         end
-
 
         % function [xs,ys,zs] = getProjection(obj,affMat)
         %     [x_wrld, y_wrld, z_wrld] = obj.getMapping(obj.affMats_wrld);

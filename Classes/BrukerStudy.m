@@ -12,12 +12,6 @@ classdef BrukerStudy < handle
 
     methods (Access = private)
 
-        function loaded = isLoaded(obj,expmtNum)
-            expmtNums = obj.getNums;
-            ind = find(expmtNum==expmtNums);
-            loaded = ind && ~isempty(obj.expmts{ind});
-        end
-
         function expmtNums = getNums(obj)
             % Method used to get the numbers corresponding to the
             % experiment directories. Valid directories must contain an
@@ -95,6 +89,12 @@ classdef BrukerStudy < handle
         end
 
         %%%%%%%%%% Experiment Methods %%%%%%%%%%%%%
+
+        function loaded = isLoaded(obj,expmtNum)
+            expmtNums = obj.getNums;
+            ind = find(expmtNum==expmtNums);
+            loaded = ind && ~isempty(obj.expmts{ind});
+        end
 
         function loadExpmts(obj,loadNums,opts)
             % Method used to load bruker experiments and populate

@@ -32,4 +32,5 @@ function [TC,cBds,dataNorm] = mat2TC(data,colormap,opts)
         cBds = [cMin,cMax];
     end
     TC = ind2rgb(round(data),colormap);
+    TC(isnan(data)) = NaN;
 end
