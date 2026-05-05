@@ -5,12 +5,12 @@ classdef ndMRViewer <handle
         focus = [];
         dimLbls = [];
         intensityLbl = [];
-        axMaps = {};
         cmap = [];
         visDims = [1,1,1];
         plotMode = 'abs';
         plotType = 'Average' 
         showFoc = 1;
+        dimDirections = []; %-1 for reverse, 1 for standard
     end
     properties (Dependent)
         prettyFocus;
@@ -22,6 +22,7 @@ classdef ndMRViewer <handle
         FocChangedFcn = [];
         listeners = {};
         reportRedrawRequests = 0;
+        axMaps = {};
     end
 
     properties %Private
@@ -40,6 +41,7 @@ classdef ndMRViewer <handle
                 opts.cmap = parula(256);
                 opts.FocChangedFcn = [];
                 opts.showFoc = 1;
+                opts.dimDirections = [];
             end
             obj.data = data;
             obj.cmap = opts.cmap;
@@ -70,6 +72,14 @@ classdef ndMRViewer <handle
             if isempty(dimLbls)
                 dimLbls = arrayfun(@(d) sprintf('dim %d', d), 1:ndims(data),'UniformOutput', false);
             end
+
+            dimDirs = ones(ndims(data),1);
+            if ~isempty(dimDirs)
+                optDirs = opts.dimDirections;
+                dimDirs(1:numel(optDirs)) = optDirs;
+            end
+            assert(all(abs(dimDirs)==1),'ERROR: dimension directions can only be 1 or -1');
+            obj.dimDirections = dimDirs;
             obj.dimLbls = dimLbls;
             addprop(obj.dispAx,'FocNav');
             obj.dispAx.FocNav = obj;
@@ -193,9 +203,39 @@ classdef ndMRViewer <handle
                 snapIdxs = zeros(size(snapPts));
                 for idx = 1:numel(currPts)
                     [~,snapIdx] = min(abs(currPts(idx)-validPts));
-                    snapPts(idx) = validPts(snapIdx);
                     snapIdxs(idx) = snapIdx;
                 end
+
+                function sortedInds = sortInds(inds,currPts_,validPts_)
+                    if allunique(inds)
+                        sortedInds = inds;
+                        return;
+                    end
+                    for ii = 1:numel(inds)-1
+                        if inds(ii)==inds(ii+1)
+                            %area too thin!!
+                            %First: bump ends if applicable:
+                            if inds(ii) == numel(validPts_)||...
+                                    ismember(currPts_(2),validPts_)
+                                %on right edge or right point is exact => move lhs
+                                inds(ii) = inds(ii)-1;
+                                break;
+                            elseif inds(ii) == 1||...
+                                    ismember(currPts_(1),validPts_)
+                                %on left edge or left point is exact => move rhs
+                                inds(ii+1) = inds(ii+1)+1;
+                                break;
+                            else
+                                %when in doubt, arbitrarily prefer rhs
+                                inds(ii) = inds(ii)-1;
+                                break;
+                            end
+                        end
+                    end
+                    sortedInds = sortInds(inds,currPts_,validPts_);
+                end
+                snapIdxs = sortInds(snapIdxs,currPts,validPts);
+                snapPts = validPts(snapIdxs);
             end
             
             switch evt.EventName
@@ -367,7 +407,6 @@ classdef ndMRViewer <handle
 
             switch plotOption
                 case 'linePlot'
-
                     currFoc{xDim} = ':';
                     focData = obj.data(currFoc{:});
                     plotData = squeeze(mean(focData,allDims(allDims~=xDim)));
@@ -388,9 +427,11 @@ classdef ndMRViewer <handle
                         %If there is already a plot handle, check that it is
                         %the right type, if not, clear the handle
                         pltHdl = obj.currPlotHandle;
-                        if isvalid(pltHdl)&&isa(pltHdl,'matlab.graphics.chart.primitive.Line')
-                            set(pltHdl,'XData',xs);
-                            set(pltHdl,'YData',plotData);
+                        if isvalid(pltHdl)&&isa(pltHdl,'matlab.graphics.chart.primitive.Line')&&...
+                           isequal(size(xs),size(pltHdl.XData))&&...
+                           isequal(size(plotData),size(pltHdl.YData))
+                                set(pltHdl,'XData',xs);
+                                set(pltHdl,'YData',plotData);
                         else
                             obj.currPlotHandle = gobjects(0);
                         end
@@ -399,17 +440,34 @@ classdef ndMRViewer <handle
                     if isempty(obj.currPlotHandle)
                         % if there is no attached handle, set one:
                         cla(ax);
+                        %hold(ax,'off');
                         obj.currPlotHandle = plot(ax,xs,plotData);
+                        axis(ax,'padded');
+                        zoom(ax,'reset');
+                        %hold(ax,'on');
                     end
     
                     %Setup Axes:
-                    if ~isempty(dx)&&dimsChgd
+                    if dimsChgd
                         %xlim(ax,[xs(1),xs(end)]);
                         axis(ax,'padded');
                         zoom(ax,'reset');
                         %axis(ax,'normal');
-                        set(ax,'YDir','normal');
+                        
                     end
+                    if -1==obj.dimDirections(xDim)
+                        set(ax,'XDir','reverse');
+                    else
+                        set(ax,'XDir','normal');
+                    end
+                    if xDim~=yDim
+                        if -1==obj.dimDirections(yDim)
+                            set(ax,'YDir','reverse');
+                        else
+                            set(ax,'YDir','normal');
+                        end
+                    end
+
                     xlabel(ax,obj.dimLbls(xDim));
                     ylabel(ax,obj.intensityLbl);
                     ax.XLabel.ContextMenu = xyCM;
@@ -493,7 +551,8 @@ classdef ndMRViewer <handle
                         %If there is alread a plot handle, check that it is
                         %the right type, if not, clear the handle
                         pltHdl = obj.currPlotHandle;
-                        if isvalid(pltHdl)&&isa(pltHdl,'matlab.graphics.primitive.Patch')
+                        if isvalid(pltHdl)&&isa(pltHdl,'matlab.graphics.primitive.Patch')&&...
+                                isequal(size(plotData'),pltHdl.CData)
                             updateWaterfall(pltHdl,xs_mesh,zs_mesh,plotData');
                         else
                             obj.currPlotHandle = gobjects(0);
@@ -522,6 +581,16 @@ classdef ndMRViewer <handle
                         zlim(ax,[pltMin,pltMax]);
                         axis(ax,'padded');
                         zoom(ax,'reset');
+                        if -1==obj.dimDirections(xDim)
+                            set(ax,'XDir','reverse');
+                        else
+                            set(ax,'XDir','normal');
+                        end
+                        if 1==obj.dimDirections(yDim)
+                            set(ax,'YDir','reverse');
+                        else
+                            set(ax,'YDir','normal');
+                        end
                         %axis(ax,'normal');
                         %set(ax,'YDir','normal');
                     end
@@ -564,7 +633,8 @@ classdef ndMRViewer <handle
                     
                     if ~isempty(obj.currPlotHandle)
                         pltHdl = obj.currPlotHandle;
-                        if isvalid(pltHdl)&&isa(pltHdl,'matlab.graphics.primitive.Image')
+                        if isvalid(pltHdl)&&isa(pltHdl,'matlab.graphics.primitive.Image')&&...
+                            isequal(size(plotData'),size(pltHdl.CData))
                             set(pltHdl,'XData',[xs(1),xs(end)]);
                             set(pltHdl,'YData',[ys(1),ys(end)]);
                             set(pltHdl,'CData',plotData');
@@ -602,7 +672,16 @@ classdef ndMRViewer <handle
                         % xlim([xs(1),xs(end)]);
                         % ylim([ys(1),ys(end)]);
                         axis(ax,'padded');
-                        set(ax,'YDir','normal');
+                        if -1==obj.dimDirections(xDim)
+                            set(ax,'XDir','reverse');
+                        else
+                            set(ax,'XDir','normal');
+                        end
+                        if -1==obj.dimDirections(yDim)
+                            set(ax,'YDir','reverse');
+                        else
+                            set(ax,'YDir','normal');
+                        end
                     end
                     
                     %Set up FocRect:
@@ -695,7 +774,8 @@ classdef ndMRViewer <handle
                         clearInds = [];
                         for idx = 1:numel(zs)
                             pltHdl = obj.currPlotHandle{idx};
-                            if isvalid(pltHdl)&&isa(pltHdl,'matlab.graphics.chart.primitive.Surface')
+                            if isvalid(pltHdl)&&isa(pltHdl,'matlab.graphics.chart.primitive.Surface')&&...
+                                isequal(size(plotData(:,:,idx)'),size(pltHdl.CData))
                                 set(pltHdl,'XData',xs(:));
                                 set(pltHdl,'YData',zs_mesh(idx,:)');
                                 set(pltHdl,'ZData',ys_mesh)
@@ -745,7 +825,16 @@ classdef ndMRViewer <handle
                         ylim([ys(1),ys(end)]);
                         % zlim([zs(1),zs(end)]);
                         axis(ax,'padded');
-                        set(ax,'YDir','normal');
+                        if -1==obj.dimDirections(xDim)
+                            set(ax,'XDir','reverse');
+                        else
+                            set(ax,'XDir','normal');
+                        end
+                        if -1==obj.dimDirections(yDim)
+                            set(ax,'YDir','reverse');
+                        else
+                            set(ax,'YDir','normal');
+                        end
                     end
                     colormap(ax,obj.cmap);
                     xlabel(ax,obj.dimLbls(xDim));

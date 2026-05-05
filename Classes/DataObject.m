@@ -1,4 +1,4 @@
-classdef dataObj < handle
+classdef DataObject < handle
 
     properties
         kDataRaw
@@ -7,28 +7,30 @@ classdef dataObj < handle
         dimY = NaN
         dimZ = NaN
         dimFG = NaN
-        procCache = struct;
+        nDims;
+        proc = struct;
         sysParams = struct;
         analysis = {};
-        rProcParamsCell
+        %rProcParamsCellima
         linkedPlots = {};
+        procSetters = {};
     end
 
     properties (Access = private)
-        kProc_cashed;
-        rProc_cashed;
-        loadType;
+        % kProc_cashed;
+        % rProc_cashed;
+        % loadType;
     end
 
     properties (Dependent)
-        rProcParams;
+        %rProcParams;
         xppm;
         rData;
         kData;
     end
 
     properties (SetObservable)
-        kProcParams;
+        %kProcParams;
         rFocus;
         kFocus;
         prefs = struct('showFocChg',true, ...
@@ -65,10 +67,10 @@ classdef dataObj < handle
     methods
         %%%%%%%%%%%%% CONSTRUCTOR %%%%%%%%%%%%%%%%%
 
-        function obj = dataObj(data,dataType,sysParams)
+        function obj = DataObject(data,dataType,sysParams)
             arguments
-                data;
-                dataType {mustBeMember(dataType,{'K','R'})};
+                data; %data must be organized: (nPts,x,y,z,FG)
+                dataType {mustBeMember(dataType,{'k','r'})};
 
                 %allParams should be a struct with fields below
                 sysParams.allParams = [];
@@ -81,12 +83,12 @@ classdef dataObj < handle
                 sysParams.flipAng = [];
                 sysParams.ppmBW = [];
                 sysParams.tempRes = [];
-                sysParams.dataShape = [];
+                %sysParams.dataShape = [];
                 sysParams.kspaceTforms = {{'fftshift','fft'},...
-                                      {'ifftshift','ifft','ifftshift'},...
-                                      {'ifftshift','ifft','ifftshift'},...
-                                      {'ifftshift','ifft','ifftshift'},...
-                                      {},{}}; % transforms from k-space to real space
+                                          {'ifftshift','ifft','ifftshift'},...
+                                          {'ifftshift','ifft','ifftshift'},...
+                                          {'ifftshift','ifft','ifftshift'},...
+                                          {},{}}; % transforms from k-space to real space
             end
             
             % initially set sysParams to any fields within allParams with
@@ -114,15 +116,10 @@ classdef dataObj < handle
             
             
             %initialize data dimensions: 
-            if isempty(obj.sysParams.dataShape)
-                obj.setDims(data);
-            else
-                data = reshape(data,obj.sysParams.dataShape);
-                obj.setDims(data);
-            end
-
+            obj.setDims(data);
+            
             %Set up k/r data variables
-            if strcmp(dataType,'K')
+            if strcmp(dataType,'k')
                 obj.kDataRaw = data;
             else
                 obj.kDataRaw = K_R_Tform(data,obj.sysParams.kspaceTforms,true);                
@@ -151,10 +148,9 @@ classdef dataObj < handle
             % - rProcParams is stored as array for speed since each voxel
             %   can have individual proc params
             
-            obj.kProcParams = struct('blank',[],'lb',[],'zf',[]);
+            %obj.kProcParams = struct('blank',[],'lb',[],'zf',[]);
             %obj.kProc_cashed = obj.kProcParams;
-            obj.initRProcParams;
-            obj.initProcCache;
+            obj.initProc;
             obj.setListeners;
             obj.updateProc;
         end
@@ -174,6 +170,7 @@ classdef dataObj < handle
 
         function focChangedFcn(obj,~,~)
             obj.updateLinkedPlots;
+            obj.updateProcSetters;
         end
 
         function updateLinkedPlots(obj)
@@ -187,9 +184,11 @@ classdef dataObj < handle
                     end
                     switch lp.LinkedPlotParams.domain
                         case 'k'
+                            lp.FocNav.axMaps = obj.axMaps("k");
                             lp.FocNav.data = obj.kData;
                             lp.FocNav.focus = obj.kFocus;
                         case 'r'
+                            lp.FocNav.axMaps = obj.axMaps("r");
                             lp.FocNav.data = obj.rData;
                             lp.FocNav.focus = obj.rFocus;
 
@@ -202,16 +201,115 @@ classdef dataObj < handle
             end
         end
 
+        function pInd = procStepInd(obj,procStep)
+            arguments
+                obj
+                procStep ProcStep
+            end
+            allSteps = [obj.proc.kProcSteps,obj.proc.rProcSteps];
+            pInd = [];
+            for idx = 1:numel(allSteps)
+                if isequal(procStep,allSteps{idx})
+                    pInd = idx;
+                end
+            end
+        end
+
+        function t = procStreamTbl(obj)
+            kSteps = obj.proc.kProcSteps;
+            rSteps = obj.proc.rProcSteps;
+            steps = cell(numel(kSteps)+numel(rSteps)+2,2);
+            steps(1,:) = {NaN,'Raw K-Space'};
+            for idx = 1:numel(kSteps)
+                steps(idx+1,1) = {idx};
+                steps(idx+1,2) = {kSteps{idx}.tag};
+            end
+            steps(numel(kSteps)+2,:) = {NaN,'FFT'};
+            for idx = 1:numel(rSteps)
+                steps(idx+numel(kSteps)+2,1) = {idx+numel(kSteps)};
+                steps(idx+numel(kSteps)+2,2) = {rSteps{idx}.tag};
+            end
+            t = cell2table(steps,'VariableNames',{'Index','Tag'});
+        end
+
+        function newProcSetter(obj,procInd,opts)
+            arguments
+                obj
+                procInd {mustBeInteger}
+                opts.togglePrevStepCache = true %start caching prev step
+            end
+            procStep = obj.getProcByInd(procInd);
+            if isempty(procStep)
+                disp('Invalid Proc Ind!');
+            end
+            if isempty(procStep.setter)
+                warning('Proc step #%d doesn''t have an attached setter!',procInd);
+                return;
+            end
+            setter = procStep.setter;
+            setter.init;
+            obj.procSetters{end+1} = setter;
+            if opts.togglePrevStepCache
+                prevStep = obj.prevProcStep(procStep);
+                if ~isempty(prevStep)
+                    prevStep.cacheable = true;
+                    obj.updateProcStep(prevStep);
+                end
+            end
+            obj.updateProcSetters;
+        end
+        
+        function updateProcSetters(obj)
+            %
+            if ~isempty(obj.procSetters)
+               clearInds = [];
+               for idx = 1:numel(obj.procSetters)
+                    setter = obj.procSetters{idx};
+                    if ~setter.isActive()
+                        clearInds(end+1) = idx; %#ok agrow
+                        continue;
+                    end
+                    domain = obj.procStepDomain(setter.procStep);
+                    if isempty(domain)
+                        %proc step not found
+                        clearInds(end+1) = idx; %#ok agrow
+                        continue
+                    end
+                    setter.update;
+               end
+               if ~isempty(clearInds)
+                   fprintf('Cleared %d inactive proc setter(s)\n',numel(clearInds))
+               end
+               obj.procSetters(clearInds) = [];
+            end
+        end
+
         function procChangedFcn(obj,~,~)
             obj.updateLinkedPlots;
+            obj.updateProcSetters;
         end
 
         function rData = get.rData(obj)
-            rData = obj.procCache.rData;
+            rData = obj.proc.cache.rData;
         end
 
         function kData = get.kData(obj)
-            kData = obj.procCache.kData;
+            kData = obj.proc.cache.kData;
+        end
+
+        function aMaps = axMaps(obj,domain)
+            arguments
+                obj
+                domain {mustBeMember(domain,{'k','r'})};
+            end
+            aMaps = {1:obj.dimF,...
+                      1:obj.dimX,...
+                      1:obj.dimY,...
+                      1:obj.dimZ,...
+                      1:obj.dimFG};
+            if strcmp(domain,'r')
+                aMaps{1} = obj.xppm;
+            end
         end
 
         function newLinkedPlot(obj,domain,focController)
@@ -251,21 +349,18 @@ classdef dataObj < handle
                 end
             end
             obj.updateLinkedPlots;
-            axMaps = {obj.xppm,...
-                      1:obj.dimX,...
-                      1:obj.dimY,...
-                      1:obj.dimZ,...
-                      1:obj.dimFG};
-            
+            dimDirs = ones(obj.nDims,1);
             if strcmp(domain,'k')
                 initFoc = obj.kFocus;
-                axMaps{1} = 1:obj.dimF;
+                axMaps = obj.axMaps('k');
                 data = obj.kData;
                 dimLbls = {'kt','kx','ky','kz','frames'};
             else
                 initFoc = obj.rFocus;
+                axMaps = obj.axMaps('r');
                 data = obj.rData;
                 dimLbls = {'Chemical Shift (ppm)','x','y','z','frames'};
+                dimDirs(1) = -1;
             end
             domainPlots = {};
             if ~isempty(obj.linkedPlots)
@@ -293,11 +388,14 @@ classdef dataObj < handle
                     return;
                 end
             end
+            
+            
             viewerObj = ndMRViewer(data,"axMaps",axMaps, ...
                                         "initFoc",initFoc,...
                                         "dimLbls",dimLbls,...
                                         'intensityLbl',"MR Signal (a.u.)",...
-                                        "showFoc",focController);
+                                        "showFoc",focController,...
+                                        "dimDirections",dimDirs);
             viewerObj.plotMode = 'real';
             if focController
                 viewerObj.FocChangedFcn = @loadFoc;
@@ -305,55 +403,477 @@ classdef dataObj < handle
             obj.linkedPlots{end+1} = setupLinkedPlot(domain,focController,viewerObj);
         end
 
-        function setProcFunState(obj,procLbl,isCurrent)
+        function addProcStep(obj,domain,procStep,insertAfterIdx)
             arguments
                 obj
-                procLbl
-                isCurrent logical;
+                domain {mustBeMember(domain,{'k','r'})};
+                procStep
+                insertAfterIdx = [];
             end
-            %toggle "Current" status of proc function
-            allProc = [obj.procCache.kProc,obj.procCache.rProc];
-            nkProc = numel(obj.procCache.kProc);
-            for idx = 1:numel(allProc)
-                if strcmp(allProc{idx}.label,procLbl)
-                    if isempty(isCurrent)
-                        allProc{idx}.current = ~allProc{idx}.current;
-                    else
-                        allProc{idx}.current = isCurrent;
+            
+            %Function to add processing step. Must specify the domain over
+            %which the step will be appled.
+
+            if ~isa(procStep,'ProcStep')
+                error('ERROR: attempted to add invalid processing step!');
+            end
+            if isempty(procStep.dataObj)
+                procStep.dataObj = obj;
+            end
+            if strcmp(domain,'k')
+                currProcList = obj.proc.kProcSteps;
+                if -1==insertAfterIdx
+                    insertAfterIdx = numel(currProcList);
+                end
+                currProcList = [currProcList(1:insertAfterIdx),...
+                                                {procStep},...
+                                                currProcList(insertAfterIdx+1:end)];
+                 obj.proc.kProcSteps = currProcList;
+                
+            else
+                currProcList = obj.proc.rProcSteps;
+                if -1==insertAfterIdx
+                    insertAfterIdx = numel(currProcList);
+                end
+                currProcList = [currProcList(1:insertAfterIdx),...
+                                                {procStep},...
+                                                currProcList(insertAfterIdx+1:end)];
+                 obj.proc.rProcSteps = currProcList;
+            end
+        end
+        
+        function pStep = getProcByInd(obj,ind)
+            arguments
+                obj
+                ind {mustBeInteger}
+            end
+            allSteps = [obj.proc.kProcSteps,obj.proc.rProcSteps];
+            pStep = allSteps{ind};
+        end
+
+        function domain = procStepDomain(obj,procStep)
+            arguments
+                obj
+                procStep ProcStep
+            end
+            domains = [];
+            domain = '';
+            
+            if any(cellfun(@(x) isequal(x, procStep),obj.proc.kProcSteps))
+                domains(1) = 1;
+                domain = 'k';
+            end
+            if any(cellfun(@(x) isequal(x, procStep),obj.proc.rProcSteps))
+                domains(2) = 1;
+                domain = 'r';
+            end
+            if all(domains)
+                error('ERROR: proc step is found in both domains!');
+            end
+        end
+
+        function prevStep = prevProcStep(obj,procStep,opts)
+            arguments
+                obj
+                procStep
+                opts.restrictDomain = true
+            end
+            assert(isa(procStep,'ProcStep'));
+            %get the previous proccessing step. use restrictDomain to only
+            %return previous step within same domain. Thus calling this on
+            %the first step in either domain will return []
+            
+            stepInd = obj.procStepInd(procStep);
+            if isempty(stepInd)
+                %=> procStep is not in stream
+                error('ProcStep is not in stream!');
+            end
+
+            if 1==stepInd
+                %no previous step
+                prevStep = [];
+                return;
+            end
+            if ~opts.restrictDomain
+                prevStep = getProcByInd(stepInd-1);
+                return;
+            end
+            %search by domain:
+            kSteps = obj.proc.kProcSteps;
+            rSteps = obj.proc.rProcSteps;
+            if strcmp(obj.procStepDomain(procStep),'k')
+                %safe to skip first here b/c we checked above
+                for idx = 2:numel(kSteps)
+                    step = kSteps{idx};
+                    if isequal(step,procStep)
+                        prevStep = kSteps{idx-1};
+                        return;
+                    end
+                end
+            else
+                for idx = 1:numel(rSteps)
+                    step = rSteps{idx};
+                    if isequal(step,procStep)
+                        if idx==1
+                            %=> first step in rdomain
+                            prevStep = [];
+                            return;
+                        else
+                            prevStep = rSteps{idx-1};
+                            return;
+                        end
                     end
                 end
             end
-            obj.procCache.kProc = allProc(1:nkProc);
-            obj.procCache.rProc = allProc(nkProc+1:end);
+            
         end
 
-        function initProcCache(obj)
-            obj.procCache.kProc = {struct('label','bk', ...
-                                          'fun',@obj.applyBlank, ...
-                                          'cacheable',false,...
-                                          'current',false),...
-                                   struct('label','lb', ...
-                                          'fun',@obj.applyLB, ...
-                                          'cacheable',false,...
-                                          'current',false),...
-                                   struct('label','zf', ...
-                                          'fun',@obj.applyZF, ...
-                                          'cacheable',false,...
-                                          'current',false)};
-            obj.procCache.rProc = {struct('label','ps', ...
-                                          'fun',@obj.applyPhases, ...
-                                          'cacheable',false,...
-                                          'current',false),...
-                                   struct('label','bs', ...
-                                          'fun',@obj.applyBaselines, ...
-                                          'cacheable',false,...
-                                          'current',false)};
+        function updateProcStep(obj,procStep)
+            arguments
+                obj
+                procStep ProcStep
+            end
+            domain = obj.procStepDomain(procStep);
+            pInd = obj.procStepInd(procStep);
+            if strcmp(domain,'k')
+                obj.proc.kProcSteps{pInd} = procStep;
+            else
+                obj.proc.rProcSteps{pInd} = procStep;
+            end
+        end
+
+        function inputData = getProcStepInput(obj,procStep)
+            arguments
+                obj
+                procStep ProcStep
+            end
+            %allows access of data state immediately before the given
+            %processing step. 
+            domain = obj.procStepDomain(procStep);
+            prevStep = obj.prevProcStep(procStep,"restrictDomain",1);
             
-            obj.procCache.kData = [];
-            obj.procCache.rData = [];
-            nProcSteps = numel(obj.procCache.kProc)+...
-                         numel(obj.procCache.rProc);
-            obj.procCache.cachedStates = cell(nProcSteps,1);
+            %edge cases:
+            if strcmp(domain,'k')&&isempty(prevStep)
+                inputData = obj.kDataRaw;
+            elseif strcmp(domain,'r')&&isempty(prevStep)
+                inputData = K_R_Tform(obj.kData,obj.sysParams.kspaceTforms);
+            else
+                %if previous state was cached, grab it
+                if prevStep.cacheable
+                    inputData = prevStep.cachedState;
+                    return;
+                end
+                %set previous state to be cacheable, run forced update and
+                %break out after previous proc is finished, get that cached
+                %state, and revert cacheing status
+                prevStep.cacheable = true;
+                obj.updateProcStep(prevStep);
+                prevInd = obj.procStepInd(prevStep);
+                obj.updateProc("force",1,"breakAtStep",prevStep);
+                step = getProcByInd(prevInd);
+                step.cacheable = false;
+                obj.updateProcStep(step);
+            end
+            
+        end
+       
+        function initProc(obj)
+            obj.proc = struct('kProcSteps',[],...
+                              'rProcSteps',[],...
+                              'cache',struct('kData',[],...
+                                             'rData',[]));
+            %start with default processing steps:
+            
+            %% Blanking:
+            function blankedData = applyBlank(procObj,~,data)
+                %blankInd = blankInd{1};
+                if isempty(procObj.params)
+                    blankedData = data;
+                    return;
+                end
+                blankInd = procObj.params{1};
+                blankedData = shift_data(data,blankInd);
+            end
+            blankStep = ProcStep(@applyBlank,'global', ...
+                                              'cacheable',false, ...
+                                              'params',{},...
+                                              'tag','Blanking',...
+                                              'dataObj',obj);
+            obj.addProcStep('k',blankStep,-1);
+            %%
+
+            %% Line Broadening:
+            function lbData = applyLB(procObj,dataObj,data)
+                %Performs exponential line broadening on k-space data
+                if isempty(procObj.params)
+                    lbData = data;
+                    return;
+                end
+                lb = procObj.params{1};
+                ppmBW = dataObj.sysParams.ppmBW;
+                mhzCF = dataObj.sysParams.mhzCF;
+                dt = (1/(ppmBW*mhzCF));
+	            lbData = apod(data,lb,dt);
+            end
+            lbStep = ProcStep(@applyLB,'global',...
+                                        'cacheable',false, ...
+                                        'params',{},...
+                                        'tag','Line Broadening',...
+                                        'dataObj',obj);
+            obj.addProcStep('k',lbStep,-1);
+            %%
+
+            %% Zero Fill:
+            function zfData = applyZF(procObj,dataObj,data)
+                % Performs zf on k-space data
+                %Ensure zf = [fFill,xFill,yFill,zFill]
+                %default: [1,1,1,1] => no zf on any dimensions
+                if isempty(procObj.params)
+                    zfData = data;
+                    return;
+                end
+                zf = ones(4,1);
+                zfParam = procObj.params{1};
+                allProcSteps = [dataObj.proc.kProcSteps(:)',...
+                                dataObj.proc.rProcSteps(:)'];
+                zfStepInd = [];
+                downstreamLocalProcs = false;
+                for idx = 1:numel(allProcSteps)
+                    procStep = allProcSteps{idx};
+                    if isequal(procStep,procObj)
+                        zfStepInd = idx;
+                    end
+                    if ~isempty(zfStepInd)
+                        if idx>zfStepInd&&...
+                           strcmp(procStep.scope,'local')&&...
+                           ~all(cellfun(@isempty, procStep.params))
+                            downstreamLocalProcs = true;
+                        end
+                    end
+                end
+                proceed = true;
+                if downstreamLocalProcs
+                    deciding = true;
+                    while deciding
+                        res = input(sprintf('WARNING: changing the zero fill will destroy downstream local processing steps. Proceed? (y/n): '),'s');
+                        switch res
+                            case 'y'
+                                deciding = false;
+                            case 'n'
+                                proceed = false;
+                                deciding = false;
+                            otherwise
+                                disp('Unrecognized Response');
+                        end
+
+                    end
+                end
+                zfData = [];
+                if proceed
+                    zf(1:numel(zfParam)) = zfParam;
+                    if all(zf==1)
+                        zfData = data;
+                    else
+                        zfData = zFill(data,zf);
+                    end
+                end
+            end
+            zfStep = ProcStep(@applyZF,'global',...
+                                        'cacheable',false, ...
+                                        'params',{},...
+                                        'tag','zero-fill',...
+                                        'dataObj',obj);
+            obj.addProcStep('k',zfStep,-1);
+            %%
+
+            %% Phase Correction
+            function psData = applyPhases(procObj,~,data)
+                %TODO: integrate sparse matricies for parameters
+                %assume first dimension is spectral
+                nPts = size(data,1);
+                if isempty(procObj.params)
+                    %if no phasing has been done, return data unchanged
+                    psData = data;
+                    return;
+                end
+                phi0s = procObj.params{1};
+                phi1s = procObj.params{2};
+                pivots = procObj.params{3};
+                
+
+                if ~all(isequal(size(data,2:ndims(data)),size(phi0s)))
+                    %data size has changed, unable to apply phasing
+                    disp('WARNING: Data size has changed, clearing phasing parameters!');
+                    procObj.params = {};
+                    psData = data;
+                    return;
+                end
+                phi0s = reshape(repmat(phi0s,[nPts,1]),[size(data)]);
+                phi1s = reshape(repmat(phi1s,[nPts,1]),[size(data)]);
+                pivots = reshape(repmat(pivots,[nPts,1]),[size(data)]);
+                if isempty(phi1s)
+                    phase = phi0s;
+                else
+                    phase = repmat((1:nPts)',size(data,2:ndims(data)));
+                    phase = (phase-pivots).*phi1s+phi0s;
+                end
+                psData = data.*exp(1i*deg2rad(phase));
+            end
+            % function setPhases(procObj,dataObj)
+            % %% junk
+            % %     function applyPsFun(~,~,psObj,userData)
+            % %         psObj.applyPhaseButton.Enable = 'off';
+            % %         procObj_ = userData{1};
+            % %         dataObj_ = userData{2};
+            % %         data_ = userData{3};
+            % %         phi0 = psObj.phi0;
+            % %         phi1 = psObj.phi1;
+            % %         pivot = psObj.pivot_ind;
+            % %         if isempty(procObj_.params)
+            % %             procObj_.params{1} = zeros(size(data_,2:ndims(data_)));
+            % %             procObj_.params{2} = zeros(size(data_,2:ndims(data_)));
+            % %             procObj_.params{3} = zeros(size(data_,2:ndims(data_)));
+            % %         end
+            % %         newPhi0 = procObj_.params{1};
+            % %         newPhi1 = procObj_.params{2};
+            % %         newPivot = procObj_.params{3};
+            % %         spatFoc_ = dataObj_.rFocus(2:end);
+            % %         if ~procObj_.constInRegion(spatFoc_)
+            % %             res_ = input('WARNING: the current focus spans more than one unique phase. Override phases in this region? (y/n) ','s');
+            % %             if strcmp(res_,'y')
+            % %                 newPhi0 = repmat(phi0,size(newPhi0));
+            % %                 newPhi1 = repmat(phi1,size(newPhi1));
+            % %                 newPivot = repmat(pivot,size(newPivot));
+            % %             else
+            % %                 disp('Aborting phase set...')
+            % %                 psObj.applyPhaseButton.Enable = 'on';
+            % %                 return;
+            % %             end
+            % %         end
+            % % 
+            % %         newPhi0(spatFoc_{:}) = phi0;
+            % %         newPhi1(spatFoc_{:}) = phi1;
+            % %         newPivot(spatFoc_{:}) = pivot;
+            % %         procObj_.setParams({newPhi0,newPhi1,newPivot})
+            % %         dataObj_.updateProc;
+            % %         psObj.applyPhaseButton.Enable = 'on';
+            % %     end
+            % % 
+            % % 
+            % %     % if ~isempty(dataObj.psSetter)
+            % %     %     setter = dataObj.psSetter;
+            % %     %     if isvalid(setter.panel)
+            % %     %         setterFig = ancestor(setter.panel,'Figure');
+            % %     %         figure(setterFig);
+            % %     %         selection = uiconfirm(setterFig,'Close existing instance?','Existing setter');
+            % %     %         switch selection
+            % %     %             case 'OK'
+            % %     %                 delete(setterFig);
+            % %     %             case 'Cancel'
+            % %     %                 return;
+            % %     %         end
+            % %     %     end
+            % %     % end
+            % % 
+            % %     currFoc = dataObj.rFocus;
+            % %     prevData = dataObj.getProcStepInput(procObj);
+            % %     %calls PhaseAdj and sets applyPhaseFun to route into
+            % %     %procObj.setParams
+            % %     prevData_foc = prevData(currFoc{:});
+            % %     prevData_foc = mean(prevData_foc,2:ndims(prevData));
+            % %     phi0s = [];
+            % %     phi1s = [];
+            % %     pivots = [];
+            % %     spatFoc = currFoc(2:end);
+            % %     if ~isempty(procObj.params)
+            % %         currPhi0s = procObj.params{1};
+            % %         currPhi1s = procObj.params{2};
+            % %         currPivots = procObj.params{3};
+            % %         phi0s = currPhi0s(spatFoc{:});
+            % %         phi1s = currPhi1s(spatFoc{:});
+            % %         pivots = currPivots(spatFoc{:});
+            % %     end
+            % % 
+            % %     if ~isempty(phi0s)
+            % %         if ~procObj.constInRegion(spatFoc)
+            % %             res = input('WARNING: the current focus spans more than one unique phase. Reset phases for this region? (y/n) ','s');
+            % %             if strcmp(res,'y')
+            % %                 phi0s = [];
+            % %                 phi1s = [];
+            % %                 pivots = [];
+            % %             else
+            % %                 disp('Aborting phase set...')
+            % %                 return;
+            % %             end
+            % %         else
+            % %             phi0s = phi0s(1);
+            % %             phi1s = phi1s(1);
+            % %             pivots = pivots(1);
+            % %         end
+            % %     end
+            % %     dataObj.psSetter = PhaseAdj(prevData_foc,"ppmAx",dataObj.xppm,...
+            % %                           "applyPhaseFun",@applyPsFun,...
+            % %                           "userData",{procObj,dataObj,prevData},...
+            % %                           "phi0",phi0s,...
+            % %                           "phi1",phi1s,...
+            % %                           "pivot_ind",pivots);
+            % 
+            % %%
+            % 
+            % 
+            % end
+            
+            psStep = ProcStep(@applyPhases,"local","cacheable",false,...
+                                                   "params",{},...
+                                                   "tag",'phasing',...
+                                                   'dataObj',obj);
+            psSetter = ProcSetter(psStep,obj,@psSetterInit,@psSetterUpdate,@psSetterApply,@psSetterIsActive);
+            psStep.setter = psSetter;
+            obj.addProcStep("r",psStep,-1);
+            %%
+
+            %% Baseline Correction
+            function bsData = applyBaselines(procObj,~,data)
+                if isempty(procObj.params)
+                    %no baseline correction
+                    bsData = data;
+                    return;
+                end
+                lambdas = procObj.params{1};
+                ratios = procObj.params{2};
+                itermaxes = procObj.params{3};
+                
+                if ~all(isequal(size(data,2:ndims(data)),size(lambdas)))
+                    disp('WARNING: Data size has changed, clearing baseline parameters!');
+                    procObj.params = {};
+                    bsData = data;
+                    return;
+                end
+                nPts = size(data,1);
+                dataSize = size(data);
+                nOtherDims = sum(dataSize(dataSize~=1))-nPts;
+                data_flat = reshape(data,[nPts,nOtherDims]);
+                lambdas = lambdas(:);
+                ratios = ratios(:);
+                itermaxes = itermaxes(:);
+                for idx = 1:nOtherDims
+                    if all(~isempty([lambdas(idx),ratios(idx),itermaxes(idx)]))
+                        data_flat(:,idx) = arpls(data_flat(:,idx),lambdas(idx),...
+                                                                ratios(idx),...
+                                                                itermaxes(idx));
+                    end
+                end
+                bsData = reshape(data_flat,size(data));
+            end
+            bsStep = ProcStep(@applyBaselines,"local","cacheable",false,...
+                                                      "dataObj",obj,...
+                                                      "params",{},...
+                                                      "tag",'baseline');
+            obj.addProcStep("r",bsStep,-1);
+            %%
+
+            obj.proc.cache.kData = obj.kDataRaw;
+            obj.proc.cache.rData = K_R_Tform(obj.kDataRaw,obj.sysParams.kspaceTforms);
         end
 
         function val = get.xppm(obj)
@@ -371,288 +891,349 @@ classdef dataObj < handle
                 dataRef = [];
             end
             if ~isempty(dataRef)
-                [obj.dimF,obj.dimX,obj.dimY,obj.dimZ,obj.dimFG] = size(dataRef);
+                refSize = size(dataRef);
             else
-                [obj.dimF,obj.dimX,obj.dimY,obj.dimZ,obj.dimFG] = size(obj.kData);   
+                refSize = size(obj.kData);
             end
+            obj.dimF = refSize(1);
+            obj.dimX = refSize(2);
+            obj.dimY = refSize(3);
+            obj.dimZ = refSize(4);
+            obj.dimFG = refSize(5:end);
+            obj.nDims = ndims(dataRef);
         end
 
         function initFocus(obj)
-            obj.rFocus = repmat({':'},5,1);
-            obj.kFocus = repmat({':'},5,1);
+            obj.rFocus = repmat({':'},obj.nDims,1);
+            obj.kFocus = repmat({':'},obj.nDims,1);
         end
 
-        function initRProcParams(obj)
-            procSize = [9,obj.dimX,obj.dimY,obj.dimZ,obj.dimFG];
-            obj.rProcParamsCell = cell(procSize);
-        end
-
-        function [f,x,y,z,fg] = getFocus(obj,domain)
-            arguments
-                obj
-                domain {mustBeMember(domain,{'k','r'})}
-            end
-            if strcmp(domain,'k')
-                focus = obj.kFocus;
-            else
-                focus = obj.rFocus;
-            end
-            dimSizes = {obj.dimF,obj.dimX,obj.dimY,obj.dimZ,obj.dimFG};
-            for dim = 1:numel(focus)
-                if strcmp(focus{dim},':')
-                    focus{dim} = 1:dimSizes{dim};
-                end
-            end
-            f = focus{1};
-            x = focus{2};
-            y = focus{3};
-            z = focus{4};
-            fg = focus{5};
-        end
+        % function [f,x,y,z,fg] = getFocus(obj,domain)
+        %     %this should not be used
+        %     arguments
+        %         obj
+        %         domain {mustBeMember(domain,{'k','r'})}
+        %     end
+        %     if strcmp(domain,'k')
+        %         focus = obj.kFocus;
+        %     else
+        %         focus = obj.rFocus;
+        %     end
+        %     dimSizes = {obj.dimF,obj.dimX,obj.dimY,obj.dimZ,obj.dimFG};
+        %     for dim = 1:numel(focus)
+        %         if strcmp(focus{dim},':')
+        %             focus{dim} = 1:dimSizes{dim};
+        %         end
+        %     end
+        %     f = focus{1};
+        %     x = focus{2};
+        %     y = focus{3};
+        %     z = focus{4};
+        %     fg = focus{5};
+        % end
         
-        function params = get.rProcParams(obj)
-           %Parses rProcParams array and returns param structure of voxel
-           %indicated by focus.
-           [~,x,y,z,rep] = obj.getFocus("r");
-           if ~isscalar(x)||...
-              ~isscalar(y)||...
-              ~isscalar(z)||...
-              ~isscalar(rep)
+        % function params = get.rProcParams(obj)
+        %    %Parses rProcParams array and returns param structure of voxel
+        %    %indicated by focus.
+        %    [~,x,y,z,rep] = obj.getFocus("r");
+        %    if ~isscalar(x)||...
+        %       ~isscalar(y)||...
+        %       ~isscalar(z)||...
+        %       ~isscalar(rep)
+        % 
+        %         %warning('WARNING: Unable to access rProcParams for nonSingular focus!');
+        %         params = [];
+        %         return
+        %    end
+        %    paramsArr = obj.rProcParamsCell(:,x,y,z,rep);
+        %    params = struct('phi0',paramsArr(1), ...
+        %                    'phi1',paramsArr(2), ...
+        %                    'pivotVal',paramsArr(3), ...
+        %                    'pivotMode',paramsArr(4), ...
+        %                    'appliedPhase',paramsArr(5),...
+        %                    'arpls_lambda',paramsArr(6),...
+        %                    'arpls_ratio',paramsArr(7),...
+        %                    'arpls_itermax',paramsArr(8),...
+        %                    'baseline',paramsArr(9));
+        % end
 
-                %warning('WARNING: Unable to access rProcParams for nonSingular focus!');
-                params = [];
-                return
-           end
-           paramsArr = obj.rProcParamsCell(:,x,y,z,rep);
-           params = struct('phi0',paramsArr(1), ...
-                           'phi1',paramsArr(2), ...
-                           'pivotVal',paramsArr(3), ...
-                           'pivotMode',paramsArr(4), ...
-                           'appliedPhase',paramsArr(5),...
-                           'arpls_lambda',paramsArr(6),...
-                           'arpls_ratio',paramsArr(7),...
-                           'arpls_itermax',paramsArr(8),...
-                           'baseline',paramsArr(9));
-        end
-
-        function set.rProcParams(obj,s)
-            %Since rProcParams are stored in an array, editing the stuct
-            %requires setting rProcParams = struct. (i.e. unable to set
-            %individual fields as you would with normal struct)
-            arguments
-                obj
-                s 
-            end
-            [x,y,z,rep] = obj.getFocus('r');
-            if ~isscalar(x)||...
-               ~isscalar(y)||...
-               ~isscalar(z)||...
-               ~isscalar(rep)
-               
-                warning('WARNING: Unable to set rProcParams for nonSingular focus!');
-                return
-            end
-            sFields = fieldnames(s);
-            fields = fieldnames(obj.rProcParams);
-            paramsArr = squeeze(obj.rProcParamsCell(:,x,y,z,rep));
-            for idx = (1:length(sFields))
-                ind = find(strcmp(fields,sFields{idx}), 1);
-                if ~isempty(ind)
-                    paramsArr(idx) = {s.(sFields{idx})};
-                end
-            end
-            obj.rProcParamsCell(:,x,y,z,rep) = paramsArr;
-        end
+        % function set.rProcParams(obj,s)
+        %     %Since rProcParams are stored in an array, editing the stuct
+        %     %requires setting rProcParams = struct. (i.e. unable to set
+        %     %individual fields as you would with normal struct)
+        %     arguments
+        %         obj
+        %         s 
+        %     end
+        %     [x,y,z,rep] = obj.getFocus('r');
+        %     if ~isscalar(x)||...
+        %        ~isscalar(y)||...
+        %        ~isscalar(z)||...
+        %        ~isscalar(rep)
+        % 
+        %         warning('WARNING: Unable to set rProcParams for nonSingular focus!');
+        %         return
+        %     end
+        %     sFields = fieldnames(s);
+        %     fields = fieldnames(obj.rProcParams);
+        %     paramsArr = squeeze(obj.rProcParamsCell(:,x,y,z,rep));
+        %     for idx = (1:length(sFields))
+        %         ind = find(strcmp(fields,sFields{idx}), 1);
+        %         if ~isempty(ind)
+        %             paramsArr(idx) = {s.(sFields{idx})};
+        %         end
+        %     end
+        %     obj.rProcParamsCell(:,x,y,z,rep) = paramsArr;
+        % end
         
         %%%%%%%%%%%%% RESETTING/UPDATING DATA %%%%%%%%%%%%%%%%%
 
-        function revert(obj,toRevert,region)
-            % Allows for reversion of processing parameters by default this
-            % will operate on the whole data set. If you want to revert
-            % certain voxels use region = {(x1,...,xn),
-            %                              (y1,...,zn),
-            %                              (z1,...,zn),
-            %                              (rep1,...repn)}
-            %   NOTE: if zf is reverted then the obj focus will be reset
-            %   since it cannot be guarenteed that the existing focus won't
-            %   be out of range for the new data size.
-            arguments
-                obj;
-                toRevert {mustBeMember(toRevert,{'all', ...
-                                                 'blank', ...
-                                                 'lb', ...
-                                                 'zf', ...
-                                                 'Foc_Baseline', ...
-                                                 'Foc_Phase',...
-                                                 'Region_Baselines',...
-                                                 'Region_Phases'})} = 'all'
-                region = [];
-            end
-            if isempty(region)
-                region = {1:obj.dimX;...
-                          1:obj.dimY;...
-                          1:obj.dimZ;...
-                          1:obj.dimFG};
-            end
-            [x,y,z,~] = obj.getFocus("r");
-            switch toRevert
-                case 'all'
-                    obj.kProcParams.blank = [];
-                    obj.kProcParams.zf = [];
-                    obj.kProcParams.lb = [];
-                    obj.resetPhasing(region);
-                    obj.resetBaselines(region);
-                    obj.resetFocus;
-                case 'blank'
-                    obj.kProcParams.blank = [];
-                case 'lb'
-                    obj.kProcParams.lb = [];
-                case 'zf'
-                    obj.kProcParams.zf = [];
-                    obj.resetFocus;
-                case 'Foc_Baseline'
-                    region = {x,y,z,1:obj.dimFG};
-                    obj.resetBaselines(region);
-                case 'Foc_Phase'
-                    region = {x,y,z,1:obj.dimFG};
-                    obj.resetPhasing(region);
-                case 'Region_Baselines'
-                    obj.resetBaselines(region);
-                case 'Region_Phases'
-                    obj.resetPhasing(region);
-                otherwise
-                    warning('Not a valid revert request!');
-            end
-            obj.updateProc;
-        end
+        % function revert(obj,toRevert,region)
+        %     % Allows for reversion of processing parameters by default this
+        %     % will operate on the whole data set. If you want to revert
+        %     % certain voxels use region = {(x1,...,xn),
+        %     %                              (y1,...,zn),
+        %     %                              (z1,...,zn),
+        %     %                              (rep1,...repn)}
+        %     %   NOTE: if zf is reverted then the obj focus will be reset
+        %     %   since it cannot be guarenteed that the existing focus won't
+        %     %   be out of range for the new data size.
+        %     arguments
+        %         obj;
+        %         toRevert {mustBeMember(toRevert,{'all', ...
+        %                                          'blank', ...
+        %                                          'lb', ...
+        %                                          'zf', ...
+        %                                          'Foc_Baseline', ...
+        %                                          'Foc_Phase',...
+        %                                          'Region_Baselines',...
+        %                                          'Region_Phases'})} = 'all'
+        %         region = [];
+        %     end
+        %     if isempty(region)
+        %         region = {1:obj.dimX;...
+        %                   1:obj.dimY;...
+        %                   1:obj.dimZ;...
+        %                   1:obj.dimFG};
+        %     end
+        %     [x,y,z,~] = obj.getFocus("r");
+        %     switch toRevert
+        %         case 'all'
+        %             obj.kProcParams.blank = [];
+        %             obj.kProcParams.zf = [];
+        %             obj.kProcParams.lb = [];
+        %             obj.resetPhasing(region);
+        %             obj.resetBaselines(region);
+        %             obj.resetFocus;
+        %         case 'blank'
+        %             obj.kProcParams.blank = [];
+        %         case 'lb'
+        %             obj.kProcParams.lb = [];
+        %         case 'zf'
+        %             obj.kProcParams.zf = [];
+        %             obj.resetFocus;
+        %         case 'Foc_Baseline'
+        %             region = {x,y,z,1:obj.dimFG};
+        %             obj.resetBaselines(region);
+        %         case 'Foc_Phase'
+        %             region = {x,y,z,1:obj.dimFG};
+        %             obj.resetPhasing(region);
+        %         case 'Region_Baselines'
+        %             obj.resetBaselines(region);
+        %         case 'Region_Phases'
+        %             obj.resetPhasing(region);
+        %         otherwise
+        %             warning('Not a valid revert request!');
+        %     end
+        %     obj.updateProc;
+        % end
+        % 
+        % function resetBaselines(obj,region)
+        %     %Clear baselines in specified region 
+        %     %   (by default region is whole dataset)
+        %     arguments
+        %         obj 
+        %         region = [];
+        %     end
+        %     if isempty(region)
+        %         region = {1:obj.dimX;...
+        %                   1:obj.dimY;...
+        %                   1:obj.dimZ;...
+        %                   1:obj.dimFG};
+        %     end
+        %     regionSize = [1,length(region{1}),length(region{2}),...
+        %                   length(region{3}),length(region{4})];
+        %     obj.rProcParamsCell(6:9,region{:}) = cell(regionSize);
+        % end
+        % 
+        % function resetPhasing(obj,region)
+        %     %Clear phasing in specified region 
+        %     %   (by default region is whole dataset)
+        %     arguments
+        %         obj 
+        %         region = [];
+        %     end
+        %     if isempty(region)
+        %         region = {1:obj.dimX;...
+        %                   1:obj.dimY;...
+        %                   1:obj.dimZ;...
+        %                   1:obj.dimFG};
+        %     end
+        %     regionSize = [5,length(region{1}),length(region{2}),...
+        %                   length(region{3}),length(region{4})];
+        %     obj.rProcParamsCell(1:5,region{:}) = cell(regionSize);
+        % end
 
-        function resetBaselines(obj,region)
-            %Clear baselines in specified region 
-            %   (by default region is whole dataset)
-            arguments
-                obj 
-                region = [];
-            end
-            if isempty(region)
-                region = {1:obj.dimX;...
-                          1:obj.dimY;...
-                          1:obj.dimZ;...
-                          1:obj.dimFG};
-            end
-            regionSize = [1,length(region{1}),length(region{2}),...
-                          length(region{3}),length(region{4})];
-            obj.rProcParamsCell(6:9,region{:}) = cell(regionSize);
-        end
-
-        function resetPhasing(obj,region)
-            %Clear phasing in specified region 
-            %   (by default region is whole dataset)
-            arguments
-                obj 
-                region = [];
-            end
-            if isempty(region)
-                region = {1:obj.dimX;...
-                          1:obj.dimY;...
-                          1:obj.dimZ;...
-                          1:obj.dimFG};
-            end
-            regionSize = [5,length(region{1}),length(region{2}),...
-                          length(region{3}),length(region{4})];
-            obj.rProcParamsCell(1:5,region{:}) = cell(regionSize);
-        end
-
-        function updateProc(obj)
+        function updateProc(obj,opts)
             %reprocess data according to k/r proc parameters.
-            % 
-            % WARNING: for large datasets or data sets with extensive
-            %          processing this method may have a long run time
             arguments
                 obj
+                opts.force = false %force update all steps
+                opts.breakAtStep = []; %abort update at given step
             end
-            kProcCache = obj.procCache.kProc;
-            rProcCache = obj.procCache.rProc;
-            cachedStates = obj.procCache.cachedStates;
-            nProcSteps = numel(kProcCache)+numel(rProcCache);
-            forkPoint = nProcSteps;
-            for idx = numel(rProcCache):-1:1
-                cache = rProcCache{idx};
-                if ~cache.current&&idx+numel(kProcCache)<forkPoint
-                    forkPoint = idx+numel(kProcCache);
+            breakStep = opts.breakAtStep;
+            if ~isempty(breakStep)
+                assert(isa(breakStep,'ProcStep'));
+            end
+            %get all processing steps:
+            kProcSteps = obj.proc.kProcSteps;
+            rProcSteps = obj.proc.rProcSteps;
+            if ~opts.force
+                %Use currency tags to find most current point in proc stream:
+                forkPoint = [];
+                for idx = 1:numel(kProcSteps)
+                    step = kProcSteps{idx};
+                    if ~step.current
+                        forkPoint = idx;
+                        break;
+                    end
                 end
-            end
-            for idx = numel(kProcCache):-1:1
-                cache = kProcCache{idx};
-                if ~cache.current&&idx<forkPoint
-                    forkPoint = idx;
+                if isempty(forkPoint)
+                    for idx = 1:numel(rProcSteps)
+                        step = rProcSteps{idx};
+                        if ~step.current
+                            forkPoint = idx+numel(kProcSteps);
+                        end
+                    end
                 end
-            end
-            
-            revertState = [];
-            revertProcInd = [];
-            if forkPoint==nProcSteps
-                %all current => nothing to update
-                return;
-            else
+                if isempty(forkPoint)
+                    %all steps are current
+                    return;
+                end
+                
+                %Work back from fork point to see if there are any usable
+                %states to restart processing stream from:
+                revertState = [];
+                revertProcInd = [];
                 for idx = forkPoint:-1:1
-                    state = cachedStates{idx};
+                    state = [];
+                    if idx>numel(kProcSteps)
+                        if ~isempty(rProcSteps)
+                            state = rProcSteps{idx-numel(kProcSteps)}.cachedState;
+                        end
+                    else
+                        if ~isempty(kProcSteps)
+                            state = kProcSteps{idx}.cachedState;
+                        end
+                    end
                     if ~isempty(state)
+                        %Found valid restart point. Set and exit search
                         revertState = state;
                         revertProcInd = idx;
                         break;
                     end
                 end
+                %State cached by default at fft step. Check if fork point
+                %is after this step. If so, use the cached kData as new
+                %starting point
                 if isempty(revertState)&&...
-                    ~isempty(obj.procCache.kData)&&...
-                    forkPoint>numel(kProcCache)
-
-                    revertState = obj.procCache.kData;
-                    revertProcInd = numel(kProcCache)+1;
+                    ~isempty(obj.proc.cache.kData)&&...
+                    forkPoint>numel(kProcSteps)
+    
+                    revertState = obj.proc.cache.kData;
+                    revertProcInd = numel(kProcSteps)+1;
                 end
-            end
-            if isempty(revertState)
+                if isempty(revertState)
+                    %All cached states are invalid => start from raw
+                    revertState = obj.kDataRaw;
+                    revertProcInd = 1;
+                end
+            else
                 revertState = obj.kDataRaw;
                 revertProcInd = 1;
             end
-            toDo_kProcs = revertProcInd:numel(kProcCache);
-            toDo_rProcs = max(revertProcInd-numel(kProcCache),1):numel(rProcCache);
+            %Determine which steps are needed to apply to k and r domains:
+            toDo_kProcs = revertProcInd:numel(kProcSteps);
+            toDo_rProcs = max(revertProcInd-numel(kProcSteps),1):numel(rProcSteps);
+            %currState holds entire dataset as it moves through processing
+            %stream
             currState = revertState;
             if ~isempty(toDo_kProcs)
+                %If there is processing to be dones on the k-space, do this
+                %processing:
                 for idx = toDo_kProcs
                     %do each specified kProc and cache along the way
-                    procStep = kProcCache{idx};
-                    procFun = procStep.fun;
-                    currState = procFun(currState);
-                    if ~isequal(size(obj.rProcParamsCell),size(currState))
-                        obj.setDims(currState);
-                        obj.initRProcParams;
+                    procStep = kProcSteps{idx};
+                    currState = procStep.processData(currState,'updateParams',true,...
+                                                                   'attemptCache',true);
+                    if isempty(currState)
+                        if ~isempty(procStep.tag)
+                            fprintf('Update aborted in k domain at %s step\n',procStep.tag);
+                        else
+                            fprintf('Update aborted in k domain at step %d\n',idx);
+                        end
+                        return;
                     end
-                    procStep.current = true;
-                    if procStep.cacheable
-                        cachedStates{idx} = currState;
+                    if isequal(breakStep,procStep)
+                        if ~isempty(procStep.tag)
+                            fprintf('Update aborted at requested break step (%s)\n',procStep.tag);
+                        else
+                            fprintf('Update aborted at requested break step #%d\n',idx);
+                        end
+                        return;
                     end
-                    kProcCache{idx} = procStep;
+                    kProcSteps{idx} = procStep;
                 end
             end
-            obj.procCache.kProc = kProcCache;
-            obj.procCache.kData = currState;
-            currState = K_R_Tform(obj.procCache.kData,obj.sysParams.kspaceTforms);
+            
+            %Always cache the final k-space before fft:
+            kData_cache = currState;
+            %Apply specified transforms to move to r-space:
+            currState = K_R_Tform(currState,obj.sysParams.kspaceTforms);
             if ~isempty(toDo_rProcs)
-                %Transform to image space:
                 for idx = toDo_rProcs
                     %do each specified rProc and cache along the way
-                    procStep = rProcCache{idx};
-                    procFun = procStep.fun;
-                    currState = procFun(currState);
-                    procStep.current = true;
-                    if procStep.cacheable
-                        cachedStates{idx} = currState;
+                    procStep = rProcSteps{idx};
+                    currState = procStep.processData(currState,'updateParams',true,...
+                                                                   'attemptCache',true);
+                    if isempty(currState)
+                        if ~isempty(procStep.tag)
+                            fprintf('Update Aborted in r domain at %s step\n',procStep.tag);
+                        else
+                            fprintf('Update Aborted in r domain at step %d\n',idx);
+                        end
+                        return;
                     end
-                    rProcCache{idx} = procStep;
+                    if isequal(breakStep,procStep)
+                        if ~isempty(procStep.tag)
+                            fprintf('Update aborted at requested break step (%s)\n',procStep.tag);
+                        else
+                            fprintf('Update aborted at requested break step #%d\n',idx);
+                        end
+                        return;
+                    end
+                    rProcSteps{idx} = procStep;
                 end
             end
-            obj.procCache.rProc = rProcCache;
-            obj.procCache.rData = currState;
+            %Update list of kProc steps:
+            obj.proc.kProcSteps = kProcSteps;
+            obj.proc.cache.kData = kData_cache;
+            obj.proc.rProcSteps = rProcSteps;
+            %Always save final state:
+            obj.proc.cache.rData = currState;
+            %Update data dimensions:
+            obj.setDims(currState);
+            
             if ~isempty(toDo_rProcs)||~isempty(toDo_kProcs)
                 %something has been updated => notify listener
                 notify(obj,'procChanged');
@@ -661,90 +1242,49 @@ classdef dataObj < handle
 
         %%%%%%%%%%%%% CORE PROCESSING FUNCTIONS %%%%%%%%%%%%%%%%%
 
-        function blankedData = applyBlank(obj,data)
-            %grab blanking from obj.kProcParams and retrun blanked data
-            blankInd = obj.kProcParams.blank;
-            if isempty(blankInd)
-                blankedData = data;
-            else
-                blankedData = shift_data(data,blankInd);
-            end
-        end
-		
-		function lbData = applyLB(obj,data)
-            %Performs exponential line broadening on k-space data
-            %
-            % WARNING: function requires sysParmams: ppmBW and mhzCF to
-            %          calculate line broadening function.
-            if anynan([obj.sysParams.ppmBW,obj.sysParams.mhzCF])
-                error("Missing parameters: 'ppmBW' and 'mhzCF' required" + ...
-                    "for line broadening");
-            end
-            dt = (1/(obj.sysParams.ppmBW*obj.sysParams.mhzCF));
-            lb = obj.kProcParams.lb;
-            if isempty(lb)
-                lbData = data;
-            else
-		        lbData = apod(data,lb,dt);
-            end
-        end
-
-		function zfData = applyZF(obj,data)
-            % Performs zf on k-space data
-            %Ensure zf = [fFill,xFill,yFill,zFill]
-            %default: [1,1,1,1] => no zf on any dimensions
-            zf = ones(4,1);
-            zf(1:length(obj.kProcParams.zf)) = obj.kProcParams.zf;
-            if all(zf==1)
-                zfData = data;
-            else
-                zfData = zFill(data,zf);
-            end
-        end
-          
-        function psData = applyPhases(obj,data)
-            %grabs phase data from obj.rProcParamsCell and returns phased
-            %data
-            phaseMat_curr = obj.rProcParamsCell(5,:,:,:,:,:);
-            phaseMat_curr(cellfun('isempty',phaseMat_curr)) = {zeros(obj.dimF,1)};
-            psData = data.*exp(1i*deg2rad(cell2mat(phaseMat_curr)));
-        end
-
-        function bsData = applyBaselines(obj,data)
-            %grabs baseline data from obj.rProcParamsCell and returns phased
-            %data
-            baseMat_curr = obj.rProcParamsCell(6,:,:,:,:,:);
-            baseMat_curr(cellfun('isempty',baseMat_curr)) = {zeros(obj.dimF,1)};
-            bsData = data - cell2mat(baseMat_curr);
-        end
-    
-        function setBlanking(obj,blankInd)
-            obj.kProcParams.blank = blankInd;
-            obj.setProcFunState('bk',false);
-            obj.updateProc;
-        end
-
-        function setLB(obj,lb)
-            obj.kProcParams.lb = lb;
-            obj.setProcFunState('lb',false);
-            obj.updateProc;
-        end
-
-        function setZF(obj,zf)
-            
-            if ~all(cellfun(@isempty,obj.rProcParamsCell),"all")
-                res = input('WARNING: Existing processing in the real domain will be cleared. Proceed? (y/n)','s');
-                if ~strcmp(res,'y')
-                    return;
-                end
-            end
-
-            obj.kProcParams.zf = zf;
-
-            obj.setProcFunState('zf',false);
-            obj.updateProc;
-        end
-        
+        % function psData = applyPhases(obj,data)
+        %     %grabs phase data from obj.rProcParamsCell and returns phased
+        %     %data
+        %     phaseMat_curr = obj.rProcParamsCell(5,:,:,:,:,:);
+        %     phaseMat_curr(cellfun('isempty',phaseMat_curr)) = {zeros(obj.dimF,1)};
+        %     psData = data.*exp(1i*deg2rad(cell2mat(phaseMat_curr)));
+        % end
+        % 
+        % function bsData = applyBaselines(obj,data)
+        %     %grabs baseline data from obj.rProcParamsCell and returns phased
+        %     %data
+        %     baseMat_curr = obj.rProcParamsCell(6,:,:,:,:,:);
+        %     baseMat_curr(cellfun('isempty',baseMat_curr)) = {zeros(obj.dimF,1)};
+        %     bsData = data - cell2mat(baseMat_curr);
+        % end
+        % 
+        % function setBlanking(obj,blankInd)
+        %     obj.kProcParams.blank = blankInd;
+        %     obj.setProcFunState('bk',false);
+        %     obj.updateProc;
+        % end
+        % 
+        % function setLB(obj,lb)
+        %     obj.kProcParams.lb = lb;
+        %     obj.setProcFunState('lb',false);
+        %     obj.updateProc;
+        % end
+        % 
+        % function setZF(obj,zf)
+        % 
+        %     if ~all(cellfun(@isempty,obj.rProcParamsCell),"all")
+        %         res = input('WARNING: Existing processing in the real domain will be cleared. Proceed? (y/n)','s');
+        %         if ~strcmp(res,'y')
+        %             return;
+        %         end
+        %     end
+        % 
+        %     obj.kProcParams.zf = zf;
+        % 
+        %     obj.setProcFunState('zf',false);
+        %     obj.updateProc;
+        % end
+        % 
         
         % function obj = applyPhase_old(obj,zeroOrder,pivotVal,pivotSetting,firstOrder)
         %     %Apply a linear phase to the voxel specified by obj.focus
@@ -817,70 +1357,70 @@ classdef dataObj < handle
                 
         %%%%%%%%%%%%% INTERACTIVE PROCESSING FUNCTIONS %%%%%%%%%%%%%%
 
-        function uisetfoc(obj,domain)
-            arguments
-                obj
-                domain {mustBeMember(domain,{'k','r'})}
-            end
-            
-            function loadFoc(~,~,focObj)
-                focNavAx = focObj.dispAx;
-                if isvalid(focNavAx)
-                    currFoc = focNavAx.FocNav.focus;
-                    if strcmp(domain,'k')
-                        obj.kFocus = currFoc;
-                    else
-                        obj.rFocus = currFoc;
-                    end
-                end
-            end
-            function focStopped(~,~)
-                switch domain
-                    case 'k'
-                        obj.kFocAx = [];
-                    case 'r'
-                        obj.rFocAx = [];
-                end
-            end
-            axMaps = {obj.xppm,...
-                      1:obj.dimX,...
-                      1:obj.dimY,...
-                      1:obj.dimZ,...
-                      1:obj.dimFG};
-            
-            if strcmp(domain,'k')
-                if ~isempty(obj.kFocAx)
-                    warning('Already setting kFocus!');
-                    return;
-                end
-                initFoc = obj.kFocus;
-                axMaps{1} = 1:obj.dimF;
-                data = obj.kData;
-                dimLbls = {'kt','kx','ky','kz','frames'};
-            else
-                if ~isempty(obj.rFocAx)
-                    warning('Already setting rFocus!');
-                    return;
-                end
-                initFoc = obj.rFocus;
-                data = obj.rData;
-                dimLbls = {'Chemical Shift (ppm)','x','y','z','frames'};
-            end
-            
-            focNav = ndMRViewer(data,"axMaps",axMaps, ...
-                                     "initFoc",initFoc, ...
-                                     "FocChangedFcn",@loadFoc, ...
-                                     "dimLbls",dimLbls,...
-                                     'intensityLbl',"MR Signal (a.u.)");
-            switch domain
-                case 'k'
-                    obj.kFocAx = focNav.dispAx;
-                case 'r'
-                    obj.rFocAx = focNav.dispAx;
-            end
-            fig = ancestor(focNav.dispAx,'figure');
-            fig.DeleteFcn = @(src,evt) focStopped(src,evt);
-        end
+        % function uisetfoc(obj,domain)
+        %     arguments
+        %         obj
+        %         domain {mustBeMember(domain,{'k','r'})}
+        %     end
+        % 
+        %     function loadFoc(~,~,focObj)
+        %         focNavAx = focObj.dispAx;
+        %         if isvalid(focNavAx)
+        %             currFoc = focNavAx.FocNav.focus;
+        %             if strcmp(domain,'k')
+        %                 obj.kFocus = currFoc;
+        %             else
+        %                 obj.rFocus = currFoc;
+        %             end
+        %         end
+        %     end
+        %     function focStopped(~,~)
+        %         switch domain
+        %             case 'k'
+        %                 obj.kFocAx = [];
+        %             case 'r'
+        %                 obj.rFocAx = [];
+        %         end
+        %     end
+        %     axMaps = {obj.xppm,...
+        %               1:obj.dimX,...
+        %               1:obj.dimY,...
+        %               1:obj.dimZ,...
+        %               1:obj.dimFG};
+        % 
+        %     if strcmp(domain,'k')
+        %         if ~isempty(obj.kFocAx)
+        %             warning('Already setting kFocus!');
+        %             return;
+        %         end
+        %         initFoc = obj.kFocus;
+        %         axMaps{1} = 1:obj.dimF;
+        %         data = obj.kData;
+        %         dimLbls = {'kt','kx','ky','kz','frames'};
+        %     else
+        %         if ~isempty(obj.rFocAx)
+        %             warning('Already setting rFocus!');
+        %             return;
+        %         end
+        %         initFoc = obj.rFocus;
+        %         data = obj.rData;
+        %         dimLbls = {'Chemical Shift (ppm)','x','y','z','frames'};
+        %     end
+        % 
+        %     focNav = ndMRViewer(data,"axMaps",axMaps, ...
+        %                              "initFoc",initFoc, ...
+        %                              "FocChangedFcn",@loadFoc, ...
+        %                              "dimLbls",dimLbls,...
+        %                              'intensityLbl',"MR Signal (a.u.)");
+        %     switch domain
+        %         case 'k'
+        %             obj.kFocAx = focNav.dispAx;
+        %         case 'r'
+        %             obj.rFocAx = focNav.dispAx;
+        %     end
+        %     fig = ancestor(focNav.dispAx,'figure');
+        %     fig.DeleteFcn = @(src,evt) focStopped(src,evt);
+        % end
 
         function fig = autoBase(obj,reps,opts)
             %Performs Auto-Baselining to real voxel specified by obj.focus
